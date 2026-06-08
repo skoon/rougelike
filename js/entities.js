@@ -3,13 +3,15 @@
 import { FLOOR } from "./dungeon.js";
 
 // Monster templates. `minDepth` gates when they start appearing; `weight`
-// shapes how common they are.
+// shapes how common they are. `layers` are [col,row] tiles on the Characters
+// sheet, drawn bottom-to-top to build a paper-doll sprite.
 export const MONSTERS = {
-  rat:    { name: "giant rat",    sprite: "rat",    hp: 6,  atk: 2, def: 0, xp: 3,  speed: 1, minDepth: 1, weight: 5 },
-  slime:  { name: "green slime",  sprite: "slime",  hp: 10, atk: 3, def: 0, xp: 5,  speed: 1, minDepth: 1, weight: 4 },
-  bandit: { name: "bandit",       sprite: "bandit", hp: 14, atk: 5, def: 1, xp: 9,  speed: 1, minDepth: 3, weight: 3 },
-  ghost:  { name: "pale wraith",  sprite: "ghost",  hp: 12, atk: 6, def: 0, xp: 12, speed: 1, minDepth: 4, weight: 2 },
-  knight: { name: "dread knight", sprite: "knight", hp: 26, atk: 8, def: 3, xp: 22, speed: 1, minDepth: 6, weight: 1 },
+  rat:    { name: "giant rat",    layers: [[0, 2]],                          hp: 6,  atk: 2, def: 0, xp: 3,  minDepth: 1, weight: 5 },
+  slime:  { name: "green slime",  layers: [[0, 3]],                          hp: 10, atk: 3, def: 0, xp: 5,  minDepth: 1, weight: 4 },
+  goblin: { name: "goblin",       layers: [[0, 3], [11, 7], [23, 4]],        hp: 12, atk: 4, def: 1, xp: 7,  minDepth: 2, weight: 4 },
+  bandit: { name: "bandit",       layers: [[0, 2], [8, 8], [23, 4]],         hp: 15, atk: 5, def: 1, xp: 9,  minDepth: 3, weight: 3 },
+  wraith: { name: "pale wraith",  layers: [[1, 11]],                         hp: 14, atk: 6, def: 0, xp: 13, minDepth: 4, weight: 2 },
+  knight: { name: "dread knight", layers: [[0, 0], [15, 7], [17, 5], [23, 7]], hp: 28, atk: 8, def: 3, xp: 24, minDepth: 6, weight: 1 },
 };
 
 export function makeMonster(key, x, y, depth) {
@@ -20,9 +22,12 @@ export function makeMonster(key, x, y, depth) {
     kind: "monster",
     key,
     name: t.name,
-    sprite: t.sprite,
+    layers: t.layers,
     x, y,
     rx: x, ry: y, // render position (for tweening)
+    facing: 1,
+    bobPhase: Math.random() * Math.PI * 2,
+    flashUntil: 0,
     hp: t.hp + bonus * 2,
     maxHp: t.hp + bonus * 2,
     atk: t.atk + bonus,
@@ -30,6 +35,18 @@ export function makeMonster(key, x, y, depth) {
     xp: t.xp,
     alive: true,
   };
+}
+
+// Upgrade a monster into a tougher, tinted "elite" in place.
+export function makeElite(m) {
+  m.elite = true;
+  m.tint = "#cf3a2e";
+  m.maxHp = Math.round(m.maxHp * 1.6);
+  m.hp = m.maxHp;
+  m.atk += 2;
+  m.xp = Math.round(m.xp * 2.2);
+  m.name = "elite " + m.name;
+  return m;
 }
 
 // Item templates.
@@ -83,7 +100,9 @@ export function populate(dungeon, depth, startRoom) {
     for (let n = 0; n < count; n++) {
       const c = freeCellIn(room);
       if (!c) break;
-      monsters.push(makeMonster(weightedPick(monsterKeys, depth), c.x, c.y, depth));
+      const m = makeMonster(weightedPick(monsterKeys, depth), c.x, c.y, depth);
+      if (depth >= 3 && Math.random() < 0.08 + depth * 0.01) makeElite(m);
+      monsters.push(m);
     }
 
     // Loot.

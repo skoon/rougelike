@@ -29,8 +29,11 @@ python -m http.server 8123
 - Bump-to-attack combat; defeating foes grants XP. Level-ups raise max HP, attack,
   and periodically defense.
 - Loot: gold, healing potions, weapon upgrades, and valuable amulets.
-- Five enemy types that are gated and scaled by depth — the deeper you go, the
-  deadlier it gets. Death is permanent.
+- Six enemy types — beasts (rat, slime) and layered humanoids (goblin, bandit,
+  wraith, dread knight) — gated and scaled by depth, plus tinted "elite"
+  variants on deeper floors. The deeper you go, the deadlier it gets.
+- Animated actors: directional facing, idle bob, attack lunges, hit flashes and
+  fade-out deaths. Death is permanent.
 
 ## Code layout
 

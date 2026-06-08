@@ -27,6 +27,15 @@ export class Game {
     this.cam = { x: 0, y: 0 };
     this.busyUntil = 0; // timestamp until which input is locked (tweening)
     this.over = false;
+    this.now = 0; // latest rAF timestamp
+    this.effects = []; // transient visual effects (death fades, ...)
+
+    // Offscreen buffer for compositing layered, flipped, tinted actors.
+    this.fx = document.createElement("canvas");
+    this.fx.width = CELL;
+    this.fx.height = CELL;
+    this.fxCtx = this.fx.getContext("2d");
+    this.fxCtx.imageSmoothingEnabled = false;
 
     this.bindInput();
     this.loop = this.loop.bind(this);
@@ -37,8 +46,12 @@ export class Game {
     this.depth = 0;
     this.player = {
       kind: "player",
-      sprite: "player",
+      // Layered paper-doll: body + leather armor + ginger hair.
+      layers: [[0, 0], [11, 7], [23, 0]],
       x: 0, y: 0, rx: 0, ry: 0,
+      facing: 1,
+      bobPhase: 0,
+      flashUntil: 0,
       hp: 30, maxHp: 30,
       atk: 5, def: 1,
       level: 1, xp: 0, xpNext: 20,
@@ -46,6 +59,7 @@ export class Game {
       alive: true,
     };
     this.messages = [];
+    this.effects = [];
     this.over = false;
     this.log("You descend into the catacombs...", "dim");
     this.nextLevel();
@@ -97,6 +111,7 @@ export class Game {
   turn(dx, dy) {
     const p = this.player;
     if (dx !== 0 || dy !== 0) {
+      if (dx !== 0) p.facing = dx > 0 ? 1 : -1;
       const nx = p.x + dx;
       const ny = p.y + dy;
       const target = this.monsterAt(nx, ny);
@@ -165,6 +180,7 @@ export class Game {
         !this.monsterAt(nx, ny) &&
         !(this.player.x === nx && this.player.y === ny)
       ) {
+        if (dx !== 0) m.facing = dx > 0 ? 1 : -1;
         m.x = nx; m.y = ny;
         return;
       }
@@ -173,6 +189,15 @@ export class Game {
 
   // ---------------------------------------------------------------- combat
   attack(attacker, defender) {
+    // Visual feedback: attacker lunges at the target; defender flashes white.
+    const ldx = Math.sign(defender.x - attacker.x);
+    const ldy = Math.sign(defender.y - attacker.y);
+    if (ldx !== 0) attacker.facing = ldx;
+    attacker.lungeStart = this.now;
+    attacker.lungeDx = ldx;
+    attacker.lungeDy = ldy;
+    defender.flashUntil = this.now + 130;
+
     const raw = attacker.atk - defender.def;
     const dmg = Math.max(1, raw + (Math.floor(Math.random() * 3) - 1));
     defender.hp -= dmg;
@@ -189,6 +214,13 @@ export class Game {
       } else {
         defender.alive = false;
         this.log(`The ${defender.name} dies.`, "dim");
+        this.effects.push({
+          type: "death",
+          layers: defender.layers,
+          x: defender.rx, y: defender.ry,
+          facing: defender.facing,
+          start: this.now, dur: 420,
+        });
         this.gainXp(defender.xp);
       }
     }
@@ -306,10 +338,13 @@ export class Game {
   }
 
   loop(now) {
+    this.now = now;
     // Tween render positions toward logical positions.
     const t = 0.35;
     this.tweenActor(this.player, t);
     for (const m of this.monsters) this.tweenActor(m, t);
+    if (this.effects.length)
+      this.effects = this.effects.filter((e) => now - e.start < e.dur);
     this.centerCamera(false);
     this.render();
     requestAnimationFrame(this.loop);
@@ -365,6 +400,18 @@ export class Game {
       drawSprite(ctx, SPR[it.sprite], sx, sy, CELL);
     }
 
+    // --- death effects (fade + rise to a shadow) ---
+    for (const e of this.effects) {
+      if (e.type !== "death") continue;
+      const k = (this.now - e.start) / e.dur;
+      const sx = Math.round((e.x - camX) * CELL);
+      const sy = Math.round((e.y - camY) * CELL - k * 12);
+      this.compositeLayers(e.layers, e.facing, 0, k * 0.7, "#000");
+      ctx.globalAlpha = 1 - k;
+      ctx.drawImage(this.fx, sx, sy);
+      ctx.globalAlpha = 1;
+    }
+
     // --- monsters (only when visible) ---
     for (const m of this.monsters) {
       if (!m.alive) continue;
@@ -372,7 +419,7 @@ export class Game {
       if (!d.visible[i]) continue;
       const sx = Math.round((m.rx - camX) * CELL);
       const sy = Math.round((m.ry - camY) * CELL);
-      drawSprite(ctx, SPR[m.sprite], sx, sy, CELL);
+      this.drawActor(m, sx, sy);
       this.drawHealthBar(ctx, sx, sy, m.hp / m.maxHp);
     }
 
@@ -381,8 +428,54 @@ export class Game {
     if (p.alive) {
       const sx = Math.round((p.rx - camX) * CELL);
       const sy = Math.round((p.ry - camY) * CELL);
-      drawSprite(ctx, SPR.player, sx, sy, CELL);
+      this.drawActor(p, sx, sy);
     }
+  }
+
+  // Composite an actor's layers into the offscreen buffer, optionally flipped
+  // and tinted, leaving the result in `this.fx`.
+  compositeLayers(layers, facing, flashStrength, tintStrength, tintColor) {
+    const o = this.fxCtx;
+    o.clearRect(0, 0, CELL, CELL);
+    const flip = facing < 0;
+    if (flip) { o.save(); o.translate(CELL, 0); o.scale(-1, 1); }
+    for (const [c, r] of layers) drawSprite(o, ["chars", c, r], 0, 0, CELL);
+    if (flip) o.restore();
+
+    if (tintStrength > 0) {
+      o.globalCompositeOperation = "source-atop";
+      o.globalAlpha = tintStrength;
+      o.fillStyle = tintColor;
+      o.fillRect(0, 0, CELL, CELL);
+      o.globalAlpha = 1;
+      o.globalCompositeOperation = "source-over";
+    }
+    if (flashStrength > 0) {
+      o.globalCompositeOperation = "source-atop";
+      o.globalAlpha = flashStrength;
+      o.fillStyle = "#ffffff";
+      o.fillRect(0, 0, CELL, CELL);
+      o.globalAlpha = 1;
+      o.globalCompositeOperation = "source-over";
+    }
+  }
+
+  // Draw a living actor with idle bob, attack lunge, hit flash and elite tint.
+  drawActor(a, sx, sy) {
+    const flash =
+      this.now < a.flashUntil ? (a.flashUntil - this.now) / 130 * 0.85 : 0;
+    this.compositeLayers(a.layers, a.facing, flash, a.tint ? 0.4 : 0, a.tint);
+
+    let ox = 0;
+    let oy = Math.sin(this.now / 280 + a.bobPhase) * 1.2;
+    const LUNGE = 150;
+    if (a.lungeStart && this.now - a.lungeStart < LUNGE) {
+      const k = (this.now - a.lungeStart) / LUNGE;
+      const amt = Math.sin(k * Math.PI) * 6;
+      ox += (a.lungeDx || 0) * amt;
+      oy += (a.lungeDy || 0) * amt;
+    }
+    this.ctx.drawImage(this.fx, Math.round(sx + ox), Math.round(sy + oy));
   }
 
   drawHealthBar(ctx, sx, sy, pct) {

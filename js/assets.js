@@ -46,13 +46,8 @@ export const SPR = {
   weapon: ["dungeon", 15, 15],
   amulet: ["dungeon", 14, 12],
 
-  // --- actors (characters sheet) ---
-  player: ["chars", 0, 6],
-  slime: ["chars", 0, 3],
-  rat: ["chars", 0, 2],
-  bandit: ["chars", 1, 8],
-  knight: ["chars", 0, 11],
-  ghost: ["chars", 1, 11],
+  // Actors are composited from layered Characters-sheet tiles; see the
+  // `layers` arrays in entities.js and Game.drawActor (js/game.js).
 };
 
 // Draw a sprite into ctx at device pixel position (dx,dy) scaled to `size`.

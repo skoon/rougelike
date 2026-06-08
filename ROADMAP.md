@@ -105,7 +105,7 @@ Claude preview tooling.
 Order chosen for impact-per-effort and to lean on assets already owned:
 
 ```
-M3 (enemies/feel) → M2 (audio) → M5 (UI/juice)   ← make it FEEL good, cheap wins
+M3 [done] → M2 (audio) → M5 (UI/juice)            ← make it FEEL good, cheap wins
         → M1 (procgen depth) → M4 (combat systems) ← add DEPTH
         → M6 (meta/progression) → M7 (world/content) ← make it a COMPLETE game
 ```
@@ -121,10 +121,16 @@ milestone are roughly ordered; most are independently shippable.
 
 ---
 
-### M3 — Better-looking enemies & actors  *(start here)*
+### M3 — Better-looking enemies & actors  *(DONE)*
 **Goal:** more visual variety and game feel from the art already loaded.
 
-- [ ] **M3-T1 — Layered actor sprites.** Render actors as a stack of sprites
+> Implemented: actors are now layered paper-dolls composited in an offscreen
+> buffer (`Game.compositeLayers`/`drawActor` in `js/game.js`), with directional
+> flipping, idle bob, attack lunge, white hit-flash, fade-out death effects, and
+> tinted "elite" variants. Roster: rat/slime (beasts), goblin/bandit/wraith/
+> dread-knight (layered humanoids); see `MONSTERS` in `js/entities.js`.
+
+- [x] **M3-T1 — Layered actor sprites.** Render actors as a stack of sprites
   (body + optional armor/helmet/weapon/shield) instead of one flat tile.
   - Files: `js/assets.js` (map the gear-layer `(col,row)` coords; add `SPR` entries or a
     `LAYERS` table), `js/entities.js` (give templates a `layers: []`), `js/game.js`
@@ -133,21 +139,21 @@ milestone are roughly ordered; most are independently shippable.
     identify armor/helmet/weapon/shield tiles; define a `drawActor(ctx, actor, sx, sy)`
     helper so player + monsters share one path.
   - Done when: at least 3 monster types use composited gear and look distinct.
-- [ ] **M3-T2 — Directional facing.** Flip sprites horizontally based on last move dir.
+- [x] **M3-T2 — Directional facing.** Flip sprites horizontally based on last move dir.
   - Files: `js/entities.js` (add `facing: 1`), `js/game.js` `turn()`/`stepToward()`
     (set facing on horizontal moves), `render()`/`drawSprite` (support `flipX`).
   - Approach: add an optional `flipX` arg to `drawSprite` using `ctx.save/scale(-1,1)`.
   - Done when: actors face the direction they last moved.
-- [ ] **M3-T3 — Hit flash + death animation.** White flash on damage; squash/fade on death.
+- [x] **M3-T3 — Hit flash + death animation.** White flash on damage; squash/fade on death.
   - Files: `js/game.js` `attack()` (set `actor.flashUntil`), `render()` (tint when
     flashing), and a short-lived `effects` list for death fades.
   - Approach: drive timing off `performance.now()`; draw a white rect with
     `globalCompositeOperation='source-atop'` over the sprite, or pre-tint.
   - Done when: hits flash and deaths visibly animate out.
-- [ ] **M3-T4 — Idle bob + attack lunge.** Subtle vertical bob; lunge toward target on attack.
+- [x] **M3-T4 — Idle bob + attack lunge.** Subtle vertical bob; lunge toward target on attack.
   - Files: `js/game.js` `loop()`/`tweenActor()`/`render()`.
   - Done when: actors breathe slightly and visibly nudge toward whom they hit.
-- [ ] **M3-T5 — Elite tint variants.** Color-tinted, stat-boosted enemy variants.
+- [x] **M3-T5 — Elite tint variants.** Color-tinted, stat-boosted enemy variants.
   - Files: `js/entities.js` (`makeMonster` adds optional `tint`/`elite`), `js/game.js`
     render tint pass.
   - Done when: occasional tinted elites appear deeper and hit harder.
