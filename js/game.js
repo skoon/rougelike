@@ -29,6 +29,7 @@ export class Game {
     this.over = false;
     this.now = 0; // latest rAF timestamp
     this.effects = []; // transient visual effects (death fades, ...)
+    this.transition = null; // level-change fade state
 
     // Offscreen buffer for compositing layered, flipped, tinted actors.
     this.fx = document.createElement("canvas");
@@ -60,6 +61,8 @@ export class Game {
     };
     this.messages = [];
     this.effects = [];
+    this.transition = null;
+    this.busyUntil = 0;
     this.over = false;
     this.log("You descend into the catacombs...", "dim");
     this.nextLevel();
@@ -127,9 +130,7 @@ export class Game {
     this.pickupAt(p.x, p.y);
 
     if (this.dungeon.get(p.x, p.y) === STAIRS) {
-      this.log("You find a staircase leading deeper.", "good");
-      this.nextLevel();
-      this.startTween();
+      this.beginDescent();
       return;
     }
 
@@ -141,6 +142,31 @@ export class Game {
 
   startTween() {
     this.busyUntil = performance.now() + MOVE_MS;
+  }
+
+  // Kick off a fade-to-black transition; the new level is generated at the
+  // midpoint (while the screen is fully dark) so the swap is never visible.
+  beginDescent() {
+    this.log("You find a staircase leading deeper.", "good");
+    this.busyUntil = Infinity; // lock input for the whole transition
+    this.transition = { phase: "out", alpha: 0, duration: 420 };
+    this.transitionStart = this.now;
+  }
+
+  updateTransition() {
+    const tr = this.transition;
+    const k = Math.min(1, (this.now - this.transitionStart) / tr.duration);
+    tr.alpha = tr.phase === "out" ? k : 1 - k;
+    if (k < 1) return;
+    if (tr.phase === "out") {
+      this.nextLevel(); // generate the next floor while the screen is black
+      tr.phase = "in";
+      tr.alpha = 1;
+      this.transitionStart = this.now;
+    } else {
+      this.transition = null;
+      this.busyUntil = 0; // unlock input
+    }
   }
 
   enemyTurn() {
@@ -339,6 +365,7 @@ export class Game {
 
   loop(now) {
     this.now = now;
+    if (this.transition) this.updateTransition();
     // Tween render positions toward logical positions.
     const t = 0.35;
     this.tweenActor(this.player, t);
@@ -391,6 +418,14 @@ export class Game {
       }
     }
 
+    // --- stairs marker (once discovered, always findable) ---
+    const st = d.stairs;
+    if (st && d.explored[d.idx(st.x, st.y)]) {
+      const sx = Math.round((st.x - camX) * CELL);
+      const sy = Math.round((st.y - camY) * CELL);
+      this.drawStairsMarker(sx, sy, d.visible[d.idx(st.x, st.y)]);
+    }
+
     // --- items (only when visible) ---
     for (const it of this.items) {
       const i = d.idx(it.x, it.y);
@@ -429,6 +464,60 @@ export class Game {
       const sx = Math.round((p.rx - camX) * CELL);
       const sy = Math.round((p.ry - camY) * CELL);
       this.drawActor(p, sx, sy);
+    }
+
+    // --- level-change fade (drawn over everything) ---
+    if (this.transition) this.drawTransition(ctx);
+  }
+
+  // Pulsing glow + bobbing down-chevron so the stairs are unmistakable.
+  drawStairsMarker(sx, sy, lit) {
+    const ctx = this.ctx;
+    const pulse = 0.5 + 0.5 * Math.sin(this.now / 350);
+    const dim = lit ? 1 : 0.45;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = (0.12 + 0.22 * pulse) * dim;
+    ctx.fillStyle = "#ffcf6b";
+    ctx.fillRect(sx, sy, CELL, CELL);
+    ctx.restore();
+
+    const bob = Math.sin(this.now / 350) * 2;
+    const cx = sx + CELL / 2;
+    const cy = sy - 5 + bob;
+    ctx.save();
+    ctx.globalAlpha = (0.7 + 0.3 * pulse) * dim;
+    ctx.strokeStyle = "#ffe6a8";
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy);
+    ctx.lineTo(cx, cy + 5);
+    ctx.lineTo(cx + 5, cy);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Black fade with a "Depth N" caption as the new floor fades in.
+  drawTransition(ctx) {
+    const a = this.transition.alpha;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    ctx.fillStyle = `rgba(6,5,12,${a})`;
+    ctx.fillRect(0, 0, w, h);
+
+    if (this.transition.phase === "in") {
+      const textA = Math.max(0, (a - 0.15) / 0.85);
+      ctx.save();
+      ctx.globalAlpha = textA;
+      ctx.fillStyle = "#e8e4d8";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "bold 30px 'Trebuchet MS', system-ui, sans-serif";
+      ctx.fillText(`Depth ${this.depth}`, w / 2, h / 2);
+      ctx.restore();
     }
   }
 
