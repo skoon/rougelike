@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Catacombs of the Forgotten</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="game-wrap">
+    <header id="topbar">
+      <h1>Catacombs of the Forgotten</h1>
+      <div id="stats"></div>
+    </header>
+
+    <div id="stage">
+      <canvas id="game"></canvas>
+
+      <div id="overlay" class="hidden">
+        <div id="overlay-card">
+          <h2 id="overlay-title"></h2>
+          <p id="overlay-text"></p>
+          <button id="overlay-btn">Begin</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="log" aria-live="polite"></div>
+
+    <footer id="help">
+      <span>Move / Attack: <b>Arrows</b> or <b>WASD</b></span>
+      <span>Wait: <b>Space</b></span>
+      <span>Descend: step onto the <b>stairs</b></span>
+      <span>Restart: <b>R</b></span>
+    </footer>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
