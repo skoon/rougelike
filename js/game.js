@@ -3,6 +3,7 @@
 import { drawSprite, SPR, TILE } from "./assets.js";
 import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE } from "./dungeon.js";
 import { populate, makeMonster, makeBoss } from "./entities.js";
+import { findPath } from "./pathfind.js";
 import { audio } from "./audio.js";
 
 const MAP_W = 50;
@@ -85,6 +86,7 @@ export class Game {
       level: 1, xp: 0, xpNext: 20,
       gold: 0,
       keys: 0,
+      statuses: [],
       alive: true,
     };
     this.messages = [];
@@ -227,6 +229,7 @@ export class Game {
     }
 
     this.enemyTurn();
+    if (p.alive) this.tickStatuses(p);
     this.dungeon.computeFov(p.x, p.y, FOV_RADIUS);
     this.startTween();
     this.updateHud();
@@ -280,47 +283,64 @@ export class Game {
     const p = this.player;
     for (const m of this.monsters) {
       if (!m.alive) continue;
-      const i = this.dungeon.idx(m.x, m.y);
-      const sees = this.dungeon.visible[i];
-      const dist = Math.abs(m.x - p.x) + Math.abs(m.y - p.y);
+      this.tickStatuses(m);
+      if (!m.alive) continue;
 
-      if (sees && dist === 1) {
-        this.attack(m, p);
+      const sees = this.dungeon.visible[this.dungeon.idx(m.x, m.y)];
+      const dist = Math.abs(m.x - p.x) + Math.abs(m.y - p.y);
+      if (!sees || dist > FOV_RADIUS + 2) continue;
+
+      // Fleeing creatures retreat once badly wounded.
+      if (m.flees && m.hp / m.maxHp < 0.3) {
+        if (dist === 1 && Math.random() < 0.4) this.attack(m, p); // cornered: bite back
+        else this.fleeStep(m, p.x, p.y);
         continue;
       }
-      if (sees && dist <= FOV_RADIUS) {
-        this.stepToward(m, p.x, p.y);
+      // Ranged casters strike from afar when they have a clear line.
+      if (m.ranged && dist > 1 && dist <= m.ranged &&
+          this.dungeon.lineOfSight(m.x, m.y, p.x, p.y)) {
+        this.rangedAttack(m, p);
+        continue;
       }
+      if (dist === 1) { this.attack(m, p); continue; }
+      this.pathStep(m, p.x, p.y);
     }
     this.monsters = this.monsters.filter((m) => m.alive);
   }
 
-  // Greedy step toward target, avoiding walls and other actors.
-  stepToward(m, tx, ty) {
-    const options = [];
-    const sx = Math.sign(tx - m.x);
-    const sy = Math.sign(ty - m.y);
-    if (sx) options.push([sx, 0]);
-    if (sy) options.push([0, sy]);
-    // Prefer the larger axis first.
-    if (Math.abs(tx - m.x) < Math.abs(ty - m.y)) options.reverse();
+  // A* step toward (tx,ty), avoiding walls, locked doors and other monsters.
+  pathStep(m, tx, ty) {
+    const blocked = (x, y) => this.monsterAt(x, y) && !(x === m.x && y === m.y);
+    const path = findPath(this.dungeon, m.x, m.y, tx, ty, blocked, 400);
+    if (!path || !path.length) return;
+    const step = path[0];
+    if (step.x === tx && step.y === ty) return; // that's the player's tile
+    if (step.x !== m.x) m.facing = step.x > m.x ? 1 : -1;
+    m.x = step.x; m.y = step.y;
+  }
 
-    for (const [dx, dy] of options) {
-      const nx = m.x + dx;
-      const ny = m.y + dy;
-      if (
-        this.dungeon.isWalkable(nx, ny) &&
-        !this.monsterAt(nx, ny) &&
-        !(this.player.x === nx && this.player.y === ny)
-      ) {
-        if (dx !== 0) m.facing = dx > 0 ? 1 : -1;
-        m.x = nx; m.y = ny;
-        return;
-      }
+  // Step to the neighbour that maximises distance from the threat.
+  fleeStep(m, tx, ty) {
+    let best = null, bestD = Math.abs(m.x - tx) + Math.abs(m.y - ty);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = m.x + dx, ny = m.y + dy;
+      if (!this.dungeon.isWalkable(nx, ny) || this.monsterAt(nx, ny)) continue;
+      if (this.player.x === nx && this.player.y === ny) continue;
+      const d = Math.abs(nx - tx) + Math.abs(ny - ty);
+      if (d > bestD) { bestD = d; best = { x: nx, y: ny }; }
+    }
+    if (best) {
+      if (best.x !== m.x) m.facing = best.x > m.x ? 1 : -1;
+      m.x = best.x; m.y = best.y;
     }
   }
 
   // ---------------------------------------------------------------- combat
+  rollDamage(attacker, defender) {
+    const raw = attacker.atk - defender.def;
+    return Math.max(1, raw + (Math.floor(Math.random() * 3) - 1));
+  }
+
   attack(attacker, defender) {
     // Visual feedback: attacker lunges at the target; defender flashes white.
     const ldx = Math.sign(defender.x - attacker.x);
@@ -329,47 +349,88 @@ export class Game {
     attacker.lungeStart = this.now;
     attacker.lungeDx = ldx;
     attacker.lungeDy = ldy;
-    defender.flashUntil = this.now + 130;
 
     if (attacker.kind === "player") audio.swing();
-
-    const raw = attacker.atk - defender.def;
-    const dmg = Math.max(1, raw + (Math.floor(Math.random() * 3) - 1));
-    defender.hp -= dmg;
-
-    const hurtPlayer = defender.kind === "player";
+    const dmg = this.rollDamage(attacker, defender);
     if (attacker.kind === "player") {
       this.log(`You hit the ${defender.name} for ${dmg}.`, "good");
       audio.hit();
-    } else if (hurtPlayer) {
+    } else if (defender.kind === "player") {
       this.log(`The ${attacker.name} hits you for ${dmg}.`, "bad");
       audio.hurt();
     }
+    this.damageActor(defender, dmg);
 
-    // Juice: floating damage number, blood spray, and a kick when the player
-    // takes a hit.
-    this.spawnDamage(defender.rx, defender.ry, dmg, hurtPlayer ? "#ff6b5e" : "#ffe6a8");
-    this.spawnParticles(defender.rx, defender.ry, hurtPlayer ? "#c0392b" : "#8a1f1f", 8);
-    if (hurtPlayer) this.addShake(Math.min(9, 2 + dmg * 0.6), 200);
-
-    if (defender.hp <= 0) {
-      if (defender.kind === "player") {
-        this.die();
-      } else {
-        defender.alive = false;
-        this.log(`The ${defender.name} dies.`, "dim");
-        audio.enemyDie();
-        this.effects.push({
-          type: "death",
-          layers: defender.layers,
-          x: defender.rx, y: defender.ry,
-          facing: defender.facing,
-          start: this.now, dur: 420,
-        });
-        this.spawnParticles(defender.rx, defender.ry, "#8a1f1f", 12);
-        this.gainXp(defender.xp);
-      }
+    // Slimes (and the like) can poison on a connecting hit.
+    if (attacker.poisons && defender.alive && Math.random() < 0.5) {
+      this.applyStatus(defender, "poison", 4, 2);
+      if (defender.kind === "player") this.log("You are poisoned!", "bad");
     }
+  }
+
+  rangedAttack(caster, target) {
+    caster.flashUntil = this.now + 80;
+    const dmg = this.rollDamage(caster, target);
+    this.effects.push({
+      type: "bolt", color: "#b48cff",
+      x0: caster.rx + 0.5, y0: caster.ry + 0.5,
+      x1: target.rx + 0.5, y1: target.ry + 0.5,
+      start: this.now, dur: 220,
+    });
+    this.log(`The ${caster.name} hurls a spectral bolt for ${dmg}.`, "bad");
+    audio.hurt();
+    this.damageActor(target, dmg);
+  }
+
+  // Apply damage with floating numbers / blood / shake, and resolve death.
+  damageActor(target, dmg, color) {
+    const isPlayer = target.kind === "player";
+    target.hp -= dmg;
+    target.flashUntil = this.now + 130;
+    this.spawnDamage(target.rx, target.ry, dmg, color || (isPlayer ? "#ff6b5e" : "#ffe6a8"));
+    this.spawnParticles(target.rx, target.ry, isPlayer ? "#c0392b" : "#8a1f1f", 8);
+    if (isPlayer) this.addShake(Math.min(9, 2 + dmg * 0.6), 200);
+    if (target.hp <= 0) {
+      if (isPlayer) this.die();
+      else this.killMonster(target);
+    }
+  }
+
+  killMonster(m) {
+    if (!m.alive) return;
+    m.alive = false;
+    this.log(`The ${m.name} dies.`, "dim");
+    audio.enemyDie();
+    this.effects.push({
+      type: "death", layers: m.layers,
+      x: m.rx, y: m.ry, facing: m.facing,
+      start: this.now, dur: 420,
+    });
+    this.spawnParticles(m.rx, m.ry, "#8a1f1f", 12);
+    this.gainXp(m.xp);
+  }
+
+  // ----------------------------------------------------------- status effects
+  applyStatus(actor, type, turns, power) {
+    const existing = actor.statuses.find((s) => s.type === type);
+    if (existing) { existing.turns = Math.max(existing.turns, turns); existing.power = Math.max(existing.power, power); }
+    else actor.statuses.push({ type, turns, power });
+  }
+
+  tickStatuses(actor) {
+    if (!actor.statuses || !actor.statuses.length) return;
+    for (const s of actor.statuses) {
+      if (s.type === "poison") {
+        this.damageActor(actor, s.power, "#7dd65a");
+        if (!actor.alive) return;
+      }
+      s.turns--;
+    }
+    actor.statuses = actor.statuses.filter((s) => s.turns > 0);
+  }
+
+  hasStatus(actor, type) {
+    return actor.statuses && actor.statuses.some((s) => s.type === type);
   }
 
   gainXp(amount) {
@@ -473,7 +534,8 @@ export class Game {
       <span class="stat">DEF <b>${p.def}</b></span>
       <span class="stat">Gold <b>${p.gold}</b></span>
       ${p.keys > 0 ? `<span class="stat">Keys <b>${p.keys}</b></span>` : ""}
-      <span class="stat">Depth <b>${this.depth}</b></span>`;
+      <span class="stat">Depth <b>${this.depth}</b></span>
+      ${p.statuses.map((s) => `<span class="stat status-${s.type}">${s.type} <b>${s.turns}</b></span>`).join("")}`;
   }
 
   // ---------------------------------------------------------------- render
@@ -660,6 +722,23 @@ export class Game {
       const sx = Math.round((p.rx - camX) * CELL);
       const sy = Math.round((p.ry - camY) * CELL);
       this.drawActor(p, sx, sy);
+    }
+
+    // --- ranged bolts (travel from caster to target) ---
+    for (const e of this.effects) {
+      if (e.type !== "bolt") continue;
+      const k = Math.min(1, (this.now - e.start) / e.dur);
+      const x = e.x0 + (e.x1 - e.x0) * k;
+      const y = e.y0 + (e.y1 - e.y0) * k;
+      const sx = (x - camX) * CELL;
+      const sy = (y - camY) * CELL;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
 
     // --- particles ---
@@ -886,11 +965,18 @@ export class Game {
     }
   }
 
-  // Draw a living actor with idle bob, attack lunge, hit flash and elite tint.
+  // Draw a living actor with idle bob, attack lunge, hit flash, elite/poison tint.
   drawActor(a, sx, sy) {
     const flash =
       this.now < a.flashUntil ? (a.flashUntil - this.now) / 130 * 0.85 : 0;
-    this.compositeLayers(a.layers, a.facing, flash, a.tint ? 0.4 : 0, a.tint);
+    // Poison shows as a pulsing green wash; otherwise use any elite tint.
+    let tintColor = a.tint;
+    let tintStr = a.tint ? 0.4 : 0;
+    if (this.hasStatus(a, "poison")) {
+      tintColor = "#5fbf3a";
+      tintStr = 0.3 + 0.15 * (0.5 + 0.5 * Math.sin(this.now / 200));
+    }
+    this.compositeLayers(a.layers, a.facing, flash, tintStr, tintColor);
 
     let ox = 0;
     let oy = Math.sin(this.now / 280 + a.bobPhase) * 1.2;

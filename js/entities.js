@@ -5,12 +5,14 @@ import { FLOOR } from "./dungeon.js";
 // Monster templates. `minDepth` gates when they start appearing; `weight`
 // shapes how common they are. `layers` are [col,row] tiles on the Characters
 // sheet, drawn bottom-to-top to build a paper-doll sprite.
+// `flees`: retreats at low HP. `poisons`: melee hits can poison. `ranged`: can
+// attack from a distance (value = range in tiles).
 export const MONSTERS = {
-  rat:    { name: "giant rat",    layers: [[0, 2]],                          hp: 6,  atk: 2, def: 0, xp: 3,  minDepth: 1, weight: 5 },
-  slime:  { name: "green slime",  layers: [[0, 3]],                          hp: 10, atk: 3, def: 0, xp: 5,  minDepth: 1, weight: 4 },
+  rat:    { name: "giant rat",    layers: [[0, 2]],                          hp: 6,  atk: 2, def: 0, xp: 3,  minDepth: 1, weight: 5, flees: true },
+  slime:  { name: "green slime",  layers: [[0, 3]],                          hp: 10, atk: 3, def: 0, xp: 5,  minDepth: 1, weight: 4, poisons: true },
   goblin: { name: "goblin",       layers: [[0, 3], [11, 7], [23, 4]],        hp: 12, atk: 4, def: 1, xp: 7,  minDepth: 2, weight: 4 },
   bandit: { name: "bandit",       layers: [[0, 2], [8, 8], [23, 4]],         hp: 15, atk: 5, def: 1, xp: 9,  minDepth: 3, weight: 3 },
-  wraith: { name: "pale wraith",  layers: [[1, 11]],                         hp: 14, atk: 6, def: 0, xp: 13, minDepth: 4, weight: 2 },
+  wraith: { name: "pale wraith",  layers: [[1, 11]],                         hp: 14, atk: 6, def: 0, xp: 13, minDepth: 4, weight: 2, ranged: 5 },
   knight: { name: "dread knight", layers: [[0, 0], [15, 7], [17, 5], [23, 7]], hp: 28, atk: 8, def: 3, xp: 24, minDepth: 6, weight: 1 },
 };
 
@@ -33,6 +35,10 @@ export function makeMonster(key, x, y, depth) {
     atk: t.atk + bonus,
     def: t.def,
     xp: t.xp,
+    flees: !!t.flees,
+    poisons: !!t.poisons,
+    ranged: t.ranged || 0,
+    statuses: [],
     alive: true,
   };
 }

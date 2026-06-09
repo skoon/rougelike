@@ -59,6 +59,8 @@ body {
 
 #stats .stat { color: var(--muted); }
 #stats .stat b { color: var(--ink); }
+#stats .status-poison { color: #7dd65a; }
+#stats .status-poison b { color: #7dd65a; }
 
 #stats .bar {
   display: inline-flex;
