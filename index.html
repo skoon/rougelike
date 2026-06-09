@@ -31,6 +31,8 @@
     <footer id="help">
       <span>Move / Attack: <b>Arrows</b> or <b>WASD</b></span>
       <span>Wait: <b>Space</b></span>
+      <span>Inventory: <b>I</b></span>
+      <span>Use item: <b>1</b>–<b>9</b></span>
       <span>Descend: step onto the <b>stairs</b></span>
       <span>Restart: <b>R</b></span>
       <span id="audio-controls">
@@ -38,6 +40,12 @@
         <button id="settings-btn" type="button" title="Settings" aria-haspopup="true">⚙</button>
       </span>
     </footer>
+
+    <div id="inventory-panel" class="hidden">
+      <h3>Inventory <span class="hint">(I to close)</span></h3>
+      <div id="inv-equipped"></div>
+      <div id="inv-carried"></div>
+    </div>
 
     <div id="settings-panel" class="hidden">
       <h3>Settings</h3>

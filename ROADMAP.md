@@ -37,7 +37,8 @@ Claude preview tooling.
 | `js/dungeon.js` | `WALL/FLOOR/STAIRS`, `Room`, `Dungeon` | Map generation + field of view |
 | `js/entities.js` | `MONSTERS`, `ITEMS`, `makeMonster`, `makeItem`, `populate` | Actor/item templates + spawning |
 | `js/audio.js` | `audio` (AudioManager singleton) | Web Audio buses, procedural SFX, ambient drone, volume persistence |
-| `js/game.js` | `Game`, `showOverlay()` | State, turn loop, combat, render, input, HUD |
+| `js/pathfind.js` | `findPath()` | A* on the tile grid (enemy navigation) |
+| `js/game.js` | `Game`, `showOverlay()` | State, turn loop, combat, items/equipment, status, render, input, HUD |
 
 ### `Dungeon` (js/dungeon.js) cheat-sheet
 - Construct: `new Dungeon(w, h, strategy)` where strategy ∈ `"rooms" | "bsp" | "caves"`.
@@ -116,7 +117,7 @@ Order chosen for impact-per-effort and to lean on assets already owned:
 
 ```
 M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, cheap wins
-        → M1 [done] → M4 (combat systems)          ← add DEPTH
+        → M1 [done] → M4 [done]                     ← add DEPTH
         → M6 (meta/progression) → M7 (world/content) ← make it a COMPLETE game
 ```
 
@@ -239,27 +240,30 @@ milestone are roughly ordered; most are independently shippable.
 - [x] **M1-T6 — Boss floors.** Every 5th depth spawns a unique tinted `makeBoss` near the
   stairs; announced in the log and the descent caption ("⚔ Boss Floor ⚔").
 
-### M4 — Combat & RPG systems
+### M4 — Combat & RPG systems  *(DONE)*
 **Goal:** decisions beyond bump-attack.
 
-- [ ] **M4-T1 — Inventory + equipment.** Pick up/equip weapons, armor, shields; stats
-  apply to `atk/def`.
-  - Files: new `js/inventory.js`; `js/entities.js` (gear item defs), `js/game.js`
-    (`pickupAt`, derived-stat calc), `index.html`/`css` (equip panel).
-  - Done when: equipping changes stats and is reflected in the HUD.
-- [ ] **M4-T2 — Consumables + hotbar.** Potions/scrolls usable from number keys.
-  - Files: `js/inventory.js`, `js/game.js` (`bindInput`), HUD.
-  - Done when: a hotkey consumes an item and applies its effect.
-- [ ] **M4-T3 — Status effects.** Poison/bleed/slow with per-turn ticks + indicators.
-  - Files: `js/entities.js` (effect defs), `js/game.js` (`enemyTurn`/turn tick, render
-    icon).
-  - Done when: slime hits can poison; ticks deal damage with a visible marker.
-- [ ] **M4-T4 — A* pathfinding.** Replace greedy `stepToward` with A* on the tile grid.
-  - Files: new `js/pathfind.js`; `js/game.js` `enemyTurn`.
-  - Done when: enemies route around walls/corners toward the player.
-- [ ] **M4-T5 — AI behaviors.** Fleeing at low HP, ranged attackers, simple packs.
-  - Files: `js/entities.js` (per-type `behavior`), `js/game.js` `enemyTurn`.
-  - Done when: at least one ranged and one fleeing enemy type exist.
+> Implemented: a base-stat + equipment model (`baseAtk/baseDef` →
+> `recalcStats()` adds weapon/armor/shield bonuses to effective `atk/def`).
+> Gear (`GEAR` tiers in entities.js) drops on floors, auto-equips when better,
+> and is managed in an `I` inventory panel (equip / use buttons). Potions go to
+> the inventory and are quaffed via the panel or number-key hotbar (1–9), costing
+> a turn (`afterAction`). Status effects (`applyStatus`/`tickStatuses`) — slimes
+> poison on hit, ticking green damage with an actor tint + HUD chip. Enemies use
+> A* (`js/pathfind.js`) and per-type behaviors: rats flee at low HP, wraiths cast
+> ranged bolts. Combat refactored into `damageActor`/`killMonster`/`rollDamage`.
+
+- [x] **M4-T1 — Inventory + equipment.** Gear drops + auto-equip + `I` panel; bonuses feed
+  `recalcStats` → effective ATK/DEF in the HUD. (Pickup verified live; tier data Node-tested.)
+- [x] **M4-T2 — Consumables + hotbar.** Potions carried in inventory; used via panel or
+  number keys 1–9 (`useConsumableSlot`), consuming a turn.
+- [x] **M4-T3 — Status effects.** Poison from slimes: per-turn tick, green tint + floating
+  number + HUD indicator (`tickStatuses`).
+- [x] **M4-T4 — A* pathfinding.** `js/pathfind.js` `findPath` (Node-verified, 900 maps);
+  `pathStep` routes enemies around walls/locked doors.
+- [x] **M4-T5 — AI behaviors.** Rats flee at low HP (`fleeStep`); wraiths attack at range
+  (`rangedAttack` + bolt effect). Nests already provide packs (M1).
+  - Deferred: bleed/slow statuses and more ranged types — easy extensions of the same hooks.
 
 ### M6 — Progression & meta-game
 **Goal:** goals, persistence, replayability.

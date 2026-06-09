@@ -242,3 +242,55 @@ canvas#game {
   cursor: pointer;
 }
 #settings-panel input[type="checkbox"] { accent-color: var(--accent); }
+
+#inventory-panel {
+  position: absolute;
+  left: 50%;
+  top: 64px;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: 320px;
+  max-height: 70%;
+  overflow-y: auto;
+  padding: 14px 18px;
+  background: var(--panel);
+  border: 2px solid var(--panel-edge);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+#inventory-panel.hidden { display: none; }
+#inventory-panel h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: var(--accent);
+}
+#inventory-panel h3 .hint { color: var(--muted); font-size: 12px; font-weight: normal; }
+.inv-head {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.inv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.inv-slot { width: 60px; color: var(--muted); }
+.inv-name { flex: 1; color: var(--ink); }
+.inv-name em { color: var(--accent); font-style: normal; }
+.inv-empty { color: var(--muted); font-style: italic; font-size: 13px; }
+.inv-row button {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 9px;
+  cursor: pointer;
+  color: #111;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+}
+.inv-row button:hover { filter: brightness(1.1); }

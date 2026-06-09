@@ -20,6 +20,8 @@ python -m http.server 8123
 | Move / attack     | Arrow keys or WASD  |
 | Move / attack     | Click or tap a tile |
 | Wait a turn       | Space               |
+| Inventory         | I                   |
+| Use item (hotbar) | 1 – 9               |
 | Descend           | Step onto the stairs|
 | Restart           | R                   |
 
@@ -37,7 +39,12 @@ Volume (master/music/SFX), mute, and a screen-shake toggle live in the footer
 - Line-of-sight field of view with remembered (dimmed) explored tiles.
 - Bump-to-attack combat; defeating foes grants XP. Level-ups raise max HP, attack,
   and periodically defense.
-- Loot: gold, healing potions, weapon upgrades, and valuable amulets.
+- Equipment (weapons, armor, shields) with tiers that scale by depth, auto-equipped
+  when better and managed in an inventory panel (I). Carried potions are quaffed
+  from a number-key hotbar (1–9).
+- Smarter foes: A* pathfinding, rats that flee when wounded, wraiths that cast
+  ranged bolts, and slimes that poison on hit (with status indicators).
+- Loot: gold, healing potions, gear, and valuable amulets.
 - Six enemy types — beasts (rat, slime) and layered humanoids (goblin, bandit,
   wraith, dread knight) — gated and scaled by depth, plus tinted "elite"
   variants on deeper floors. The deeper you go, the deadlier it gets.

@@ -82,13 +82,17 @@ export class Game {
       bobPhase: 0,
       flashUntil: 0,
       hp: 30, maxHp: 30,
-      atk: 5, def: 1,
+      baseAtk: 5, baseDef: 1,
+      atk: 5, def: 1, // effective (base + equipment), set by recalcStats
+      equip: { weapon: null, armor: null, shield: null },
+      inventory: [],
       level: 1, xp: 0, xpNext: 20,
       gold: 0,
       keys: 0,
       statuses: [],
       alive: true,
     };
+    this.recalcStats();
     this.messages = [];
     this.effects = [];
     this.particles = [];
@@ -150,7 +154,15 @@ export class Game {
       const k = e.key.toLowerCase();
       if (k === "r") { e.preventDefault(); this.start(); return; }
       if (this.over) return;
+      if (k === "i") { e.preventDefault(); this.toggleInventory(); return; }
       if (performance.now() < this.busyUntil) return;
+
+      // Hotbar: number keys quaff the Nth carried consumable.
+      if (k >= "1" && k <= "9") {
+        e.preventDefault();
+        this.useConsumableSlot(parseInt(k, 10) - 1);
+        return;
+      }
 
       let dx = 0, dy = 0, wait = false;
       switch (k) {
@@ -247,8 +259,9 @@ export class Game {
     p.hp = p.maxHp;
     const boon = Math.random();
     if (boon < 0.34) { p.maxHp += 5; p.hp = p.maxHp; this.log("The shrine blesses you — max HP up!", "gold"); }
-    else if (boon < 0.67) { p.atk += 1; this.log("The shrine blesses you — attack up!", "gold"); }
-    else { p.def += 1; this.log("The shrine blesses you — defense up!", "gold"); }
+    else if (boon < 0.67) { p.baseAtk += 1; this.log("The shrine blesses you — attack up!", "gold"); }
+    else { p.baseDef += 1; this.log("The shrine blesses you — defense up!", "gold"); }
+    this.recalcStats();
     audio.levelUp();
     this.spawnParticles(p.rx, p.ry, "#7fe6ff", 14, true);
   }
@@ -442,11 +455,12 @@ export class Game {
       p.xpNext = Math.floor(p.xpNext * 1.5);
       p.maxHp += 6;
       p.hp = p.maxHp;
-      p.atk += 1;
-      if (p.level % 3 === 0) p.def += 1;
+      p.baseAtk += 1;
+      if (p.level % 3 === 0) p.baseDef += 1;
       this.log(`You reach level ${p.level}! You feel stronger.`, "gold");
       audio.levelUp();
     }
+    this.recalcStats();
   }
 
   die() {
@@ -469,37 +483,139 @@ export class Game {
     if (idx < 0) return;
     const it = this.items[idx];
     const p = this.player;
-    switch (it.key) {
+
+    switch (it.category) {
       case "gold":
         p.gold += it.amount;
-        this.log(`You pick up ${it.amount} gold.`, "gold");
-        break;
-      case "amulet":
-        p.gold += it.amount;
-        this.log(`A glittering amulet! Worth ${it.amount} gold.`, "gold");
-        break;
-      case "potion": {
-        const heal = Math.min(p.maxHp - p.hp, 12);
-        p.hp += heal;
-        this.log(`You quaff a potion and recover ${heal} HP.`, "good");
-        audio.potion();
-        this.spawnDamage(p.rx, p.ry, `+${heal}`, "#6cc04a");
-        this.spawnParticles(p.rx, p.ry, "#6cc04a", 8, true);
-        this.items.splice(idx, 1);
-        return;
-      }
-      case "weapon":
-        p.atk += 2;
-        this.log("You find a sharper blade. Attack up!", "good");
+        this.log(it.key === "amulet"
+          ? `A glittering amulet! Worth ${it.amount} gold.`
+          : `You pick up ${it.amount} gold.`, "gold");
         break;
       case "key":
         p.keys++;
         this.log("You pick up an iron key.", "gold");
         break;
+      case "consumable":
+        p.inventory.push(it);
+        this.log(`You pick up a ${it.name}.`, "good");
+        break;
+      case "equip":
+        p.inventory.push(it);
+        this.log(`You pick up a ${it.name} (+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"}).`, "good");
+        this.tryAutoEquip(it);
+        break;
     }
     audio.pickup();
     this.spawnParticles(p.rx, p.ry, "#ffcf6b", 10, true);
     this.items.splice(idx, 1);
+  }
+
+  // ---------------------------------------------------------- equipment
+  recalcStats() {
+    const p = this.player;
+    const e = p.equip;
+    p.atk = p.baseAtk + (e.weapon ? e.weapon.bonus : 0);
+    p.def = p.baseDef + (e.armor ? e.armor.bonus : 0) + (e.shield ? e.shield.bonus : 0);
+    if (this.statsEl) this.updateHud();
+  }
+
+  tryAutoEquip(it) {
+    const cur = this.player.equip[it.slot];
+    if (!cur || it.bonus > cur.bonus) this.equipItem(it);
+  }
+
+  equipItem(it) {
+    const p = this.player;
+    const cur = p.equip[it.slot];
+    p.inventory = p.inventory.filter((x) => x !== it);
+    if (cur) p.inventory.push(cur);
+    p.equip[it.slot] = it;
+    this.log(`You equip the ${it.name}.`, "good");
+    this.recalcStats();
+    this.renderInventory();
+  }
+
+  useConsumable(it) {
+    const p = this.player;
+    if (it.key === "potion") {
+      const heal = Math.min(p.maxHp - p.hp, it.heal);
+      p.hp += heal;
+      this.log(`You quaff a ${it.name} and recover ${heal} HP.`, "good");
+      audio.potion();
+      this.spawnDamage(p.rx, p.ry, `+${heal}`, "#6cc04a");
+      this.spawnParticles(p.rx, p.ry, "#6cc04a", 8, true);
+    }
+    p.inventory = p.inventory.filter((x) => x !== it);
+    this.renderInventory();
+  }
+
+  // Use the Nth consumable (hotbar 1-9). Costs a turn.
+  useConsumableSlot(n) {
+    const cons = this.player.inventory.filter((it) => it.category === "consumable");
+    const it = cons[n];
+    if (!it) return;
+    this.useConsumable(it);
+    this.afterAction();
+  }
+
+  // Run the world's reaction to a non-move player action (item use).
+  afterAction() {
+    if (this.over) return;
+    this.enemyTurn();
+    if (this.player.alive) this.tickStatuses(this.player);
+    this.dungeon.computeFov(this.player.x, this.player.y, FOV_RADIUS);
+    this.startTween();
+    this.updateHud();
+  }
+
+  // ----------------------------------------------------------- inventory UI
+  toggleInventory() {
+    const panel = document.getElementById("inventory-panel");
+    if (!panel) return;
+    panel.classList.toggle("hidden");
+    if (!panel.classList.contains("hidden")) this.renderInventory();
+  }
+
+  renderInventory() {
+    const panel = document.getElementById("inventory-panel");
+    if (!panel || panel.classList.contains("hidden")) return;
+    const p = this.player;
+
+    const slotRow = (slot) => {
+      const it = p.equip[slot];
+      const label = slot[0].toUpperCase() + slot.slice(1);
+      const stat = slot === "weapon" ? "ATK" : "DEF";
+      return `<div class="inv-row"><span class="inv-slot">${label}</span>` +
+        `<span class="inv-name">${it ? `${it.name} <em>(+${it.bonus} ${stat})</em>` : "—"}</span></div>`;
+    };
+    document.getElementById("inv-equipped").innerHTML =
+      `<div class="inv-head">Equipped</div>${slotRow("weapon")}${slotRow("armor")}${slotRow("shield")}`;
+
+    const carriedEl = document.getElementById("inv-carried");
+    if (!p.inventory.length) {
+      carriedEl.innerHTML = `<div class="inv-head">Carried</div><div class="inv-empty">empty</div>`;
+      return;
+    }
+    const consumables = p.inventory.filter((it) => it.category === "consumable");
+    carriedEl.innerHTML = `<div class="inv-head">Carried</div>`;
+    p.inventory.forEach((it) => {
+      const row = document.createElement("div");
+      row.className = "inv-row";
+      let meta = "";
+      if (it.category === "equip") meta = ` <em>(+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"})</em>`;
+      const btn = document.createElement("button");
+      if (it.category === "equip") {
+        btn.textContent = "Equip";
+        btn.onclick = () => this.equipItem(it);
+      } else {
+        const n = consumables.indexOf(it);
+        btn.textContent = n >= 0 && n < 9 ? `Use [${n + 1}]` : "Use";
+        btn.onclick = () => { this.useConsumable(it); this.afterAction(); };
+      }
+      row.innerHTML = `<span class="inv-name">${it.name}${meta}</span>`;
+      row.appendChild(btn);
+      carriedEl.appendChild(row);
+    });
   }
 
   // --------------------------------------------------------------- helpers
@@ -690,6 +806,8 @@ export class Game {
       const sx = Math.round((it.x - camX) * CELL);
       const sy = Math.round((it.y - camY) * CELL);
       if (it.key === "key") this.drawKey(sx, sy);
+      else if (it.slot === "armor") this.drawArmorIcon(sx, sy);
+      else if (it.slot === "shield") this.drawShieldIcon(sx, sy);
       else drawSprite(ctx, SPR[it.sprite], sx, sy, CELL);
     }
 
@@ -904,6 +1022,51 @@ export class Game {
     ctx.stroke();
     ctx.fillRect(cx + 5, cy, 2, 4); // teeth
     ctx.fillRect(cx + 2, cy, 2, 3);
+    ctx.restore();
+  }
+
+  // Procedural breastplate icon for armor pickups.
+  drawArmorIcon(sx, sy) {
+    const ctx = this.ctx;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + Math.sin(this.now / 300) * 1.2;
+    ctx.save();
+    ctx.fillStyle = "#9aa6b2";
+    ctx.strokeStyle = "#3a4654";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, cy - 5);
+    ctx.lineTo(cx + 6, cy - 5);
+    ctx.lineTo(cx + 5, cy + 4);
+    ctx.lineTo(cx, cy + 7);
+    ctx.lineTo(cx - 5, cy + 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 5); ctx.lineTo(cx, cy + 6);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Procedural shield icon for shield pickups.
+  drawShieldIcon(sx, sy) {
+    const ctx = this.ctx;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + Math.sin(this.now / 300) * 1.2;
+    ctx.save();
+    ctx.fillStyle = "#c2873f";
+    ctx.strokeStyle = "#5a3d1c";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy - 6);
+    ctx.lineTo(cx + 5, cy - 6);
+    ctx.lineTo(cx + 5, cy + 1);
+    ctx.lineTo(cx, cy + 7);
+    ctx.lineTo(cx - 5, cy + 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   }
 

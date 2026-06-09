@@ -71,19 +71,37 @@ export function makeBoss(x, y, depth) {
   return m;
 }
 
-// Item templates. The key is drawn procedurally (no key sprite in the packs).
-export const ITEMS = {
-  gold:   { sprite: "gold",   name: "gold" },
-  potion: { sprite: "potion", name: "healing potion" },
-  weapon: { sprite: "weapon", name: "sharpened blade" },
-  amulet: { sprite: "amulet", name: "glittering amulet" },
-  key:    { sprite: "key",    name: "iron key" },
+// Equipment tiers by slot: [name, bonus], deeper floors roll higher tiers.
+export const GEAR = {
+  weapon: [["rusty dagger", 2], ["short sword", 4], ["war axe", 6], ["runed blade", 9]],
+  armor:  [["leather armor", 1], ["chainmail", 2], ["plate armor", 4], ["rune plate", 6]],
+  shield: [["buckler", 1], ["kite shield", 2], ["tower shield", 3]],
 };
 
+// Build a world/inventory item. `category` drives how pickup handles it:
+// "gold" (instant), "key" (instant), "consumable", or "equip".
 export function makeItem(key, x, y, depth) {
-  const base = { kind: "item", key, x, y, sprite: ITEMS[key].sprite, name: ITEMS[key].name };
-  if (key === "gold") base.amount = 5 + Math.floor(Math.random() * (8 + depth * 2));
-  if (key === "amulet") base.amount = 25 + depth * 5;
+  const base = { kind: "item", key, x, y };
+  if (key === "gold") {
+    base.category = "gold"; base.sprite = "gold"; base.name = "gold";
+    base.amount = 5 + Math.floor(Math.random() * (8 + depth * 2));
+  } else if (key === "amulet") {
+    base.category = "gold"; base.sprite = "amulet"; base.name = "glittering amulet";
+    base.amount = 25 + depth * 5;
+  } else if (key === "key") {
+    base.category = "key"; base.sprite = "key"; base.name = "iron key";
+  } else if (key === "potion") {
+    base.category = "consumable"; base.sprite = "potion"; base.name = "healing potion";
+    base.heal = 12;
+  } else {
+    // weapon / armor / shield
+    const tiers = GEAR[key];
+    const ti = Math.max(0, Math.min(tiers.length - 1,
+      Math.floor((depth - 1) / 2) + (Math.random() < 0.3 ? 1 : 0)));
+    base.category = "equip"; base.slot = key; base.sprite = key;
+    base.name = tiers[ti][0];
+    base.bonus = tiers[ti][1];
+  }
   return base;
 }
 
@@ -104,6 +122,16 @@ function shuffle(a) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+function randomLootKind() {
+  const r = Math.random();
+  if (r < 0.34) return "gold";
+  if (r < 0.60) return "potion";
+  if (r < 0.72) return "weapon";
+  if (r < 0.84) return "armor";
+  if (r < 0.93) return "shield";
+  return "amulet";
 }
 
 // Populate a freshly generated dungeon. Generator-agnostic: scatters monsters
@@ -142,16 +170,14 @@ export function populate(dungeon, depth) {
   const itemCount = Math.min(cand.length - ci, 4 + Math.floor(Math.random() * 4));
   for (let n = 0; n < itemCount && ci < cand.length; n++) {
     const c = cand[ci++];
-    const r = Math.random();
-    const k = r < 0.5 ? "gold" : r < 0.8 ? "potion" : r < 0.92 ? "weapon" : "amulet";
-    items.push(makeItem(k, c.x, c.y, depth));
+    items.push(makeItem(randomLootKind(), c.x, c.y, depth));
   }
 
   // --- Locked treasure vault: a key out in the open + rich loot inside. ---
   if (dungeon.hasVault && dungeon.vaultCells.length) {
     if (ci < cand.length) items.push(makeItem("key", cand[ci].x, cand[ci++].y, depth));
     const vcells = shuffle(dungeon.vaultCells.slice());
-    const lootKinds = ["amulet", "gold", "weapon", "potion"];
+    const lootKinds = ["amulet", "weapon", "armor", "shield", "potion"];
     const lootN = Math.min(vcells.length, 3 + Math.floor(Math.random() * 2));
     for (let n = 0; n < lootN; n++) {
       items.push(makeItem(lootKinds[n % lootKinds.length], vcells[n].x, vcells[n].y, depth));
