@@ -29,8 +29,21 @@ export class Game {
     this.busyUntil = 0; // timestamp until which input is locked (tweening)
     this.over = false;
     this.now = 0; // latest rAF timestamp
-    this.effects = []; // transient visual effects (death fades, ...)
+    this.lastNow = 0; // previous frame timestamp (for dt)
+    this.effects = []; // transient visual effects (death fades, damage numbers)
+    this.particles = []; // physics-y particle bits
+    this.shake = { mag: 0, until: 0, dur: 1 }; // screen-shake state
+    this.shakeEnabled = true;
     this.transition = null; // level-change fade state
+
+    // Minimap canvas (optional; absent in minimal HTML).
+    this.mini = document.getElementById("minimap");
+    if (this.mini) {
+      this.miniScale = 3;
+      this.mini.width = MAP_W * this.miniScale;
+      this.mini.height = MAP_H * this.miniScale;
+      this.miniCtx = this.mini.getContext("2d");
+    }
 
     // Offscreen buffer for compositing layered, flipped, tinted actors.
     this.fx = document.createElement("canvas");
@@ -40,6 +53,7 @@ export class Game {
     this.fxCtx.imageSmoothingEnabled = false;
 
     this.bindInput();
+    this.bindPointer();
     this.loop = this.loop.bind(this);
   }
 
@@ -62,6 +76,8 @@ export class Game {
     };
     this.messages = [];
     this.effects = [];
+    this.particles = [];
+    this.shake = { mag: 0, until: 0, dur: 1 };
     this.transition = null;
     this.busyUntil = 0;
     this.over = false;
@@ -112,6 +128,28 @@ export class Game {
       e.preventDefault();
       if (wait) this.turn(0, 0);
       else this.turn(dx, dy);
+    });
+  }
+
+  // Click / tap a tile to step (or attack) one square toward it.
+  bindPointer() {
+    this.canvas.addEventListener("pointerdown", (e) => {
+      if (this.over || performance.now() < this.busyUntil) return;
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      const cx = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+      const cy = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+      const tx = Math.floor(cx / CELL + this.cam.x);
+      const ty = Math.floor(cy / CELL + this.cam.y);
+      const p = this.player;
+      let dx = Math.sign(tx - p.x);
+      let dy = Math.sign(ty - p.y);
+      // Movement is 4-directional: collapse diagonals to the dominant axis.
+      if (dx !== 0 && dy !== 0) {
+        if (Math.abs(tx - p.x) >= Math.abs(ty - p.y)) dy = 0;
+        else dx = 0;
+      }
+      this.turn(dx, dy); // (0,0) when the player's own tile is tapped = wait
     });
   }
 
@@ -237,13 +275,20 @@ export class Game {
     const dmg = Math.max(1, raw + (Math.floor(Math.random() * 3) - 1));
     defender.hp -= dmg;
 
+    const hurtPlayer = defender.kind === "player";
     if (attacker.kind === "player") {
       this.log(`You hit the ${defender.name} for ${dmg}.`, "good");
       audio.hit();
-    } else if (defender.kind === "player") {
+    } else if (hurtPlayer) {
       this.log(`The ${attacker.name} hits you for ${dmg}.`, "bad");
       audio.hurt();
     }
+
+    // Juice: floating damage number, blood spray, and a kick when the player
+    // takes a hit.
+    this.spawnDamage(defender.rx, defender.ry, dmg, hurtPlayer ? "#ff6b5e" : "#ffe6a8");
+    this.spawnParticles(defender.rx, defender.ry, hurtPlayer ? "#c0392b" : "#8a1f1f", 8);
+    if (hurtPlayer) this.addShake(Math.min(9, 2 + dmg * 0.6), 200);
 
     if (defender.hp <= 0) {
       if (defender.kind === "player") {
@@ -259,6 +304,7 @@ export class Game {
           facing: defender.facing,
           start: this.now, dur: 420,
         });
+        this.spawnParticles(defender.rx, defender.ry, "#8a1f1f", 12);
         this.gainXp(defender.xp);
       }
     }
@@ -285,6 +331,7 @@ export class Game {
     this.over = true;
     this.log("You have fallen in the dark.", "bad");
     audio.playerDie();
+    this.addShake(11, 450);
     showOverlay(
       "You Died",
       `You reached depth ${this.depth} at level ${this.player.level} with ${this.player.gold} gold.`,
@@ -313,6 +360,8 @@ export class Game {
         p.hp += heal;
         this.log(`You quaff a potion and recover ${heal} HP.`, "good");
         audio.potion();
+        this.spawnDamage(p.rx, p.ry, `+${heal}`, "#6cc04a");
+        this.spawnParticles(p.rx, p.ry, "#6cc04a", 8, true);
         this.items.splice(idx, 1);
         return;
       }
@@ -322,6 +371,7 @@ export class Game {
         break;
     }
     audio.pickup();
+    this.spawnParticles(p.rx, p.ry, "#ffcf6b", 10, true);
     this.items.splice(idx, 1);
   }
 
@@ -382,6 +432,8 @@ export class Game {
 
   loop(now) {
     this.now = now;
+    const dt = Math.min(0.05, (now - this.lastNow) / 1000) || 0;
+    this.lastNow = now;
     if (this.transition) this.updateTransition();
     // Tween render positions toward logical positions.
     const t = 0.35;
@@ -389,9 +441,51 @@ export class Game {
     for (const m of this.monsters) this.tweenActor(m, t);
     if (this.effects.length)
       this.effects = this.effects.filter((e) => now - e.start < e.dur);
+    if (this.particles.length) this.updateParticles(dt);
     this.centerCamera(false);
     this.render();
+    if (this.miniCtx) this.renderMinimap();
     requestAnimationFrame(this.loop);
+  }
+
+  // ------------------------------------------------------- effects / juice
+  spawnDamage(rx, ry, text, color) {
+    this.effects.push({
+      type: "float", text: String(text), color,
+      x: rx + 0.5, y: ry, start: this.now, dur: 720, rise: 20,
+    });
+  }
+
+  spawnParticles(rx, ry, color, count, up = false) {
+    for (let i = 0; i < count; i++) {
+      const ang = up
+        ? -Math.PI / 2 + (Math.random() - 0.5) * 1.3
+        : Math.random() * Math.PI * 2;
+      const spd = 0.6 + Math.random() * 2.0; // tiles/second
+      this.particles.push({
+        x: rx + 0.5, y: ry + 0.5,
+        vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - (up ? 1.2 : 0),
+        life: 0, maxLife: 0.32 + Math.random() * 0.3,
+        grav: up ? 2.5 : 4.0,
+        size: 2 + Math.random() * 2,
+        color,
+      });
+    }
+  }
+
+  addShake(mag, dur) {
+    if (!this.shakeEnabled) return;
+    this.shake = { mag: Math.max(this.shake.mag, mag), until: this.now + dur, dur };
+  }
+
+  updateParticles(dt) {
+    for (const p of this.particles) {
+      p.life += dt;
+      p.vy += p.grav * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+    this.particles = this.particles.filter((p) => p.life < p.maxLife);
   }
 
   render() {
@@ -404,6 +498,17 @@ export class Game {
     const camY = this.cam.y;
     const x0 = Math.floor(camX);
     const y0 = Math.floor(camY);
+
+    // --- screen shake (offsets everything in the world layer) ---
+    ctx.save();
+    if (this.now < this.shake.until) {
+      const k = (this.shake.until - this.now) / this.shake.dur;
+      const m = this.shake.mag * k;
+      ctx.translate(
+        Math.round((Math.random() * 2 - 1) * m),
+        Math.round((Math.random() * 2 - 1) * m)
+      );
+    }
 
     // --- terrain ---
     for (let vy = -1; vy <= VIEW_H; vy++) {
@@ -483,8 +588,71 @@ export class Game {
       this.drawActor(p, sx, sy);
     }
 
-    // --- level-change fade (drawn over everything) ---
+    // --- particles ---
+    for (const pt of this.particles) {
+      const sx = (pt.x - camX) * CELL;
+      const sy = (pt.y - camY) * CELL;
+      ctx.globalAlpha = Math.max(0, 1 - pt.life / pt.maxLife);
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(sx - pt.size / 2, sy - pt.size / 2, pt.size, pt.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // --- floating damage / heal numbers ---
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "bold 13px 'Trebuchet MS', system-ui, sans-serif";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.75)";
+    for (const e of this.effects) {
+      if (e.type !== "float") continue;
+      const k = (this.now - e.start) / e.dur;
+      const sx = (e.x - camX) * CELL;
+      const sy = (e.y - camY) * CELL - 4 - k * e.rise;
+      ctx.globalAlpha = 1 - k;
+      ctx.strokeText(e.text, sx, sy);
+      ctx.fillStyle = e.color;
+      ctx.fillText(e.text, sx, sy);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.restore(); // end screen shake
+
+    // --- level-change fade (drawn over everything, unshaken) ---
     if (this.transition) this.drawTransition(ctx);
+  }
+
+  // Top-corner minimap drawn from explored/visible state.
+  renderMinimap() {
+    const d = this.dungeon;
+    const s = this.miniScale;
+    const mm = this.miniCtx;
+    mm.clearRect(0, 0, this.mini.width, this.mini.height);
+    for (let y = 0; y < d.h; y++) {
+      for (let x = 0; x < d.w; x++) {
+        const i = d.idx(x, y);
+        if (!d.explored[i]) continue;
+        const t = d.tiles[i];
+        let col;
+        if (t === WALL) col = "#2b2a3c";
+        else if (t === STAIRS) col = "#e0a040";
+        else col = "#69697e";
+        mm.globalAlpha = d.visible[i] ? 1 : 0.5;
+        mm.fillStyle = col;
+        mm.fillRect(x * s, y * s, s, s);
+      }
+    }
+    mm.globalAlpha = 1;
+    // monsters currently in view
+    mm.fillStyle = "#e0594b";
+    for (const m of this.monsters) {
+      if (m.alive && d.visible[d.idx(m.x, m.y)])
+        mm.fillRect(m.x * s, m.y * s, s, s);
+    }
+    // player
+    const p = this.player;
+    mm.fillStyle = "#ffe6a8";
+    mm.fillRect(p.x * s - 1, p.y * s - 1, s + 2, s + 2);
   }
 
   // Pulsing glow + bobbing down-chevron so the stairs are unmistakable.

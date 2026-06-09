@@ -18,9 +18,13 @@ python -m http.server 8123
 | Action            | Keys                |
 | ----------------- | ------------------- |
 | Move / attack     | Arrow keys or WASD  |
+| Move / attack     | Click or tap a tile |
 | Wait a turn       | Space               |
 | Descend           | Step onto the stairs|
 | Restart           | R                   |
+
+Volume (master/music/SFX), mute, and a screen-shake toggle live in the footer
+(⚙ settings + 🔊 mute) and persist across sessions.
 
 ## Gameplay
 
@@ -35,8 +39,10 @@ python -m http.server 8123
 - Animated actors: directional facing, idle bob, attack lunges, hit flashes and
   fade-out deaths. Death is permanent.
 - Fully procedural audio (no sound files): synthesized SFX for movement, combat,
-  pickups, level-ups and descent, plus an ambient dungeon drone. Master volume
-  and mute live in the footer and persist across sessions.
+  pickups, level-ups and descent, plus an ambient dungeon drone.
+- Game feel: floating damage/heal numbers, blood and sparkle particles, screen
+  shake, a corner minimap, and mouse/touch click-to-move. Volumes, mute, and a
+  screen-shake toggle persist across sessions.
 
 ## Code layout
 

@@ -106,7 +106,7 @@ Claude preview tooling.
 Order chosen for impact-per-effort and to lean on assets already owned:
 
 ```
-M3 [done] → M2 [done] → M5 (UI/juice)             ← make it FEEL good, cheap wins
+M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, cheap wins
         → M1 (procgen depth) → M4 (combat systems) ← add DEPTH
         → M6 (meta/progression) → M7 (world/content) ← make it a COMPLETE game
 ```
@@ -179,28 +179,27 @@ milestone are roughly ordered; most are independently shippable.
   - Note: a fuller settings *panel* (per-bus sliders, etc.) is deferred to M5-T5;
     `audio.setSfx()`/`setMusic()` already exist for it to hook into.
 
-### M5 — Game feel & UI polish
+### M5 — Game feel & UI polish  *(DONE)*
 **Goal:** readability and juice.
 
-- [ ] **M5-T1 — Floating damage numbers.** Spawn rising/fading numbers on hits.
-  - Files: `js/game.js` (`effects` list, spawn in `attack()`, update/draw in
-    `loop()`/`render()`).
-  - Done when: damage numbers float up from struck actors.
-- [ ] **M5-T2 — Screen shake.** Brief camera offset on big hits / player damage.
-  - Files: `js/game.js` `centerCamera()`/`render()` (add a decaying `shake`).
-  - Done when: meaningful hits shake the view subtly.
-- [ ] **M5-T3 — Particles.** Blood on hits, sparkle on pickups, dust on descend.
-  - Files: new `js/particles.js` or extend the `effects` system; draw in `render()`.
-  - Done when: the three particle events render and self-expire.
-- [ ] **M5-T4 — Minimap.** Corner minimap of explored tiles + actor blips.
-  - Files: `index.html` (a small canvas), `js/game.js` (draw from
-    `dungeon.explored/visible`).
-  - Done when: minimap reflects exploration and player position.
-- [ ] **M5-T5 — Settings + input options.** Settings menu; mouse click-to-move/attack;
-  basic touch controls.
-  - Files: `index.html`, `css/style.css`, `js/game.js` (`bindInput` → pointer handler
-    converting canvas px → tile via `CELL` + `cam`).
-  - Done when: a click on an adjacent tile moves/attacks; settings open/close.
+> Implemented in `js/game.js`: a unified `effects` list (death fades + floating
+> "float" numbers) plus a `particles` array updated with real `dt` in `loop()`.
+> `spawnDamage`/`spawnParticles`/`addShake` fire from `attack`/`pickupAt`/`die`;
+> `render()` wraps the world layer in a decaying screen-shake translate and draws
+> particles + damage numbers. `renderMinimap()` paints a corner `#minimap` canvas
+> from `explored`/`visible`. `bindPointer()` converts canvas px → tile for
+> click/tap-to-move. A settings panel (`#settings-panel`, toggled by ⚙) exposes
+> master/music/sfx + a screen-shake toggle, wired in `js/main.js` (shake persisted
+> under `rl_opts`).
+
+- [x] **M5-T1 — Floating damage numbers.** Rising/fading numbers on hits (and heal/gold).
+- [x] **M5-T2 — Screen shake.** Decaying shake on player damage / death; user-toggleable.
+- [x] **M5-T3 — Particles.** Blood on hits + deaths, sparkle on pickups; all self-expire.
+- [x] **M5-T4 — Minimap.** Corner minimap of explored tiles, monster blips, player marker.
+- [x] **M5-T5 — Settings + input options.** Settings panel (volume buses + shake) and
+  pointer click/tap-to-move-or-attack (covers mouse and touch via `pointerdown`).
+  - Deferred polish: A* path on click (currently one greedy step) and an on-screen
+    touch d-pad — revisit alongside M4-T4.
 
 ### M1 — Deeper procedural generation
 **Goal:** varied, themeable, always-connected floors.

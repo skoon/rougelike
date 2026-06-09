@@ -15,6 +15,7 @@
 
     <div id="stage">
       <canvas id="game"></canvas>
+      <canvas id="minimap" title="Map"></canvas>
 
       <div id="overlay" class="hidden">
         <div id="overlay-card">
@@ -34,10 +35,17 @@
       <span>Restart: <b>R</b></span>
       <span id="audio-controls">
         <button id="mute-btn" type="button" title="Mute / unmute">🔊</button>
-        <input id="vol-slider" type="range" min="0" max="100" step="1"
-               title="Volume" aria-label="Volume" />
+        <button id="settings-btn" type="button" title="Settings" aria-haspopup="true">⚙</button>
       </span>
     </footer>
+
+    <div id="settings-panel" class="hidden">
+      <h3>Settings</h3>
+      <label>Master <input id="vol-master" type="range" min="0" max="100" /></label>
+      <label>Music <input id="vol-music" type="range" min="0" max="100" /></label>
+      <label>SFX <input id="vol-sfx" type="range" min="0" max="100" /></label>
+      <label class="check"><input id="opt-shake" type="checkbox" /> Screen shake</label>
+    </div>
   </div>
 
   <script type="module" src="js/main.js"></script>
