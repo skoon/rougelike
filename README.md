@@ -28,7 +28,10 @@ Volume (master/music/SFX), mute, and a screen-shake toggle live in the footer
 
 ## Gameplay
 
-- Procedurally generated dungeons (rooms joined by corridors), a new layout each floor.
+- Procedurally generated dungeons with three generators (rooms+corridors, BSP,
+  cellular-automata caves) selected by depth-themed biomes (Crypt → Catacombs →
+  Caverns → Sunken Depths), each with its own tile palette and fog. Every floor is
+  guaranteed fully connected with reachable stairs.
 - Line-of-sight field of view with remembered (dimmed) explored tiles.
 - Bump-to-attack combat; defeating foes grants XP. Level-ups raise max HP, attack,
   and periodically defense.

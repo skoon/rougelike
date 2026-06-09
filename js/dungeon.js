@@ -30,7 +30,7 @@ class Room {
 }
 
 export class Dungeon {
-  constructor(w, h) {
+  constructor(w, h, strategy = "rooms") {
     this.w = w;
     this.h = h;
     this.tiles = new Array(w * h).fill(WALL);
@@ -38,8 +38,11 @@ export class Dungeon {
     this.visible = new Array(w * h).fill(false);
     this.explored = new Array(w * h).fill(false);
     this.rooms = [];
-    this.stairs = null;
-    this.generate();
+    this.startPos = null; // where the player enters
+    this.stairs = null; // where the player descends
+    this.floors = []; // all reachable floor cells (for spawning)
+    this.strategy = strategy;
+    this.generate(strategy);
   }
 
   idx(x, y) { return y * this.w + x; }
@@ -53,7 +56,17 @@ export class Dungeon {
   }
   blocksSight(x, y) { return this.get(x, y) === WALL; }
 
-  generate() {
+  // Dispatch to a generation strategy, then run the shared finalize pass that
+  // guarantees connectivity and places reachable stairs.
+  generate(strategy) {
+    if (strategy === "caves") this.genCaves();
+    else if (strategy === "bsp") this.genBSP();
+    else this.genRooms();
+    this.finalize();
+  }
+
+  // --- Strategy: random non-overlapping rooms joined by L-corridors. ---
+  genRooms() {
     const maxRooms = 16;
     for (let i = 0; i < maxRooms * 3 && this.rooms.length < maxRooms; i++) {
       const w = rint(5, 10);
@@ -69,19 +82,165 @@ export class Dungeon {
       }
       this.rooms.push(room);
     }
+    this.startPos = { x: this.rooms[0].cx, y: this.rooms[0].cy };
+  }
 
-    // Stairs in the room farthest from the first one.
-    const start = this.rooms[0];
-    let best = this.rooms[1] || start;
-    let bestD = -1;
-    for (const r of this.rooms.slice(1)) {
-      const d = Math.abs(r.cx - start.cx) + Math.abs(r.cy - start.cy);
-      if (d > bestD) { bestD = d; best = r; }
+  // --- Strategy: binary space partition into rooms, joined in sequence. ---
+  genBSP() {
+    const leaves = [];
+    this._splitBSP({ x: 1, y: 1, w: this.w - 2, h: this.h - 2 }, 0, leaves);
+    for (const leaf of leaves) {
+      const rw = rint(4, Math.max(4, leaf.w - 2));
+      const rh = rint(4, Math.max(4, leaf.h - 2));
+      if (rw >= leaf.w - 1 || rh >= leaf.h - 1) continue;
+      const rx = leaf.x + rint(1, leaf.w - rw - 1);
+      const ry = leaf.y + rint(1, leaf.h - rh - 1);
+      const room = new Room(rx, ry, rw, rh);
+      this.carveRoom(room);
+      this.rooms.push(room);
     }
-    this.stairs = { x: best.cx, y: best.cy };
-    this.set(this.stairs.x, this.stairs.y, STAIRS);
+    // Connect rooms sequentially so the whole map is reachable.
+    for (let i = 1; i < this.rooms.length; i++) {
+      const a = this.rooms[i - 1];
+      const b = this.rooms[i];
+      this.carveCorridor(a.cx, a.cy, b.cx, b.cy);
+    }
+    this.startPos = this.rooms.length
+      ? { x: this.rooms[0].cx, y: this.rooms[0].cy }
+      : null;
+  }
+
+  _splitBSP(node, depth, leaves) {
+    const MIN = 7;
+    if (depth >= 5 || (node.w <= MIN * 2 && node.h <= MIN * 2)) {
+      leaves.push(node);
+      return;
+    }
+    const horiz = node.w / node.h < 1.25 && (node.h / node.w >= 1.25 || Math.random() < 0.5);
+    if (horiz) {
+      if (node.h - MIN <= MIN) { leaves.push(node); return; }
+      const cut = rint(MIN, node.h - MIN);
+      this._splitBSP({ x: node.x, y: node.y, w: node.w, h: cut }, depth + 1, leaves);
+      this._splitBSP({ x: node.x, y: node.y + cut, w: node.w, h: node.h - cut }, depth + 1, leaves);
+    } else {
+      if (node.w - MIN <= MIN) { leaves.push(node); return; }
+      const cut = rint(MIN, node.w - MIN);
+      this._splitBSP({ x: node.x, y: node.y, w: cut, h: node.h }, depth + 1, leaves);
+      this._splitBSP({ x: node.x + cut, y: node.y, w: node.w - cut, h: node.h }, depth + 1, leaves);
+    }
+  }
+
+  // --- Strategy: cellular-automata caves. ---
+  genCaves() {
+    const W = this.w, H = this.h;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const edge = x < 1 || y < 1 || x >= W - 1 || y >= H - 1;
+        this.set(x, y, edge || Math.random() < 0.45 ? WALL : FLOOR);
+      }
+    }
+    for (let it = 0; it < 5; it++) {
+      const copy = this.tiles.slice();
+      for (let y = 1; y < H - 1; y++) {
+        for (let x = 1; x < W - 1; x++) {
+          let walls = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if ((dx || dy) && copy[this.idx(x + dx, y + dy)] === WALL) walls++;
+          this.set(x, y, walls >= 5 ? WALL : FLOOR);
+        }
+      }
+    }
+    // Enter in the largest cavern; finalize() walls off the rest.
+    this.startPos = this._largestRegionCell();
+  }
+
+  // --- Shared finalize: flood from startPos, wall off unreachable floor,
+  // place stairs at the farthest reachable cell, build the floor list. ---
+  finalize() {
+    if (!this.startPos || !this.isWalkable(this.startPos.x, this.startPos.y)) {
+      this.startPos = this._firstFloor();
+    }
+    const dist = this._bfsFrom(this.startPos.x, this.startPos.y);
+
+    let farthest = { ...this.startPos };
+    let far = -1;
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const i = this.idx(x, y);
+        if (this.tiles[i] !== FLOOR) continue;
+        if (dist[i] < 0) this.tiles[i] = WALL; // unreachable: seal it
+        else if (dist[i] > far) { far = dist[i]; farthest = { x, y }; }
+      }
+    }
+
+    this.stairs = farthest;
+    this.set(farthest.x, farthest.y, STAIRS);
+
+    this.floors = [];
+    for (let y = 0; y < this.h; y++)
+      for (let x = 0; x < this.w; x++)
+        if (this.get(x, y) === FLOOR) this.floors.push({ x, y });
 
     this.scatterDecor();
+  }
+
+  _bfsFrom(sx, sy) {
+    const dist = new Array(this.w * this.h).fill(-1);
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const q = [[sx, sy]];
+    dist[this.idx(sx, sy)] = 0;
+    let head = 0;
+    while (head < q.length) {
+      const [x, y] = q[head++];
+      const d = dist[this.idx(x, y)];
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const ni = this.idx(nx, ny);
+        if (dist[ni] !== -1 || this.tiles[ni] !== FLOOR) continue;
+        dist[ni] = d + 1;
+        q.push([nx, ny]);
+      }
+    }
+    return dist;
+  }
+
+  _largestRegionCell() {
+    const seen = new Array(this.w * this.h).fill(false);
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    let bestCell = null, bestSize = -1;
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        const start = this.idx(x, y);
+        if (this.tiles[start] !== FLOOR || seen[start]) continue;
+        const q = [[x, y]];
+        seen[start] = true;
+        let head = 0;
+        while (head < q.length) {
+          const [cx, cy] = q[head++];
+          for (const [dx, dy] of dirs) {
+            const nx = cx + dx, ny = cy + dy;
+            if (!this.inBounds(nx, ny)) continue;
+            const ni = this.idx(nx, ny);
+            if (seen[ni] || this.tiles[ni] !== FLOOR) continue;
+            seen[ni] = true;
+            q.push([nx, ny]);
+          }
+        }
+        if (q.length > bestSize) { bestSize = q.length; bestCell = { x, y }; }
+      }
+    }
+    return bestCell || this._firstFloor();
+  }
+
+  _firstFloor() {
+    for (let y = 0; y < this.h; y++)
+      for (let x = 0; x < this.w; x++)
+        if (this.get(x, y) === FLOOR) return { x, y };
+    // Degenerate fallback: carve one cell.
+    this.set(1, 1, FLOOR);
+    return { x: 1, y: 1 };
   }
 
   carveRoom(room) {

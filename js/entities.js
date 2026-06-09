@@ -75,46 +75,54 @@ function weightedPick(keys, depth) {
   return pool[pool.length - 1];
 }
 
-// Populate a freshly generated dungeon. `startRoom` is left empty of monsters.
-export function populate(dungeon, depth, startRoom) {
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Populate a freshly generated dungeon. Generator-agnostic: scatters monsters
+// and loot across reachable floor cells, away from the player's entrance.
+export function populate(dungeon, depth) {
   const monsters = [];
   const items = [];
-  const occupied = new Set();
-  const key = (x, y) => x + "," + y;
-  occupied.add(key(dungeon.stairs.x, dungeon.stairs.y));
+  const start = dungeon.startPos;
+  const stairs = dungeon.stairs;
 
-  const freeCellIn = (room) => {
-    const cells = dungeon.roomCells(room).filter((c) => !occupied.has(key(c.x, c.y)));
-    if (!cells.length) return null;
-    const c = cells[Math.floor(Math.random() * cells.length)];
-    occupied.add(key(c.x, c.y));
-    return c;
-  };
+  // Candidate cells: reachable floor, a safe distance from the entrance, and
+  // not the stairs tile.
+  const cand = shuffle(
+    dungeon.floors.filter((c) => {
+      if (c.x === stairs.x && c.y === stairs.y) return false;
+      const d = Math.abs(c.x - start.x) + Math.abs(c.y - start.y);
+      return d > 6;
+    })
+  );
 
+  const area = dungeon.floors.length;
   const monsterKeys = Object.keys(MONSTERS);
+  let ci = 0;
 
-  dungeon.rooms.forEach((room, i) => {
-    if (room === startRoom) return;
+  const monsterCount = Math.min(
+    cand.length,
+    5 + depth * 2 + Math.floor(area / 130) + Math.floor(Math.random() * 4)
+  );
+  for (let n = 0; n < monsterCount && ci < cand.length; n++) {
+    const c = cand[ci++];
+    const m = makeMonster(weightedPick(monsterKeys, depth), c.x, c.y, depth);
+    if (depth >= 3 && Math.random() < 0.08 + depth * 0.01) makeElite(m);
+    monsters.push(m);
+  }
 
-    const count = 1 + Math.floor(Math.random() * (1 + Math.min(3, depth)));
-    for (let n = 0; n < count; n++) {
-      const c = freeCellIn(room);
-      if (!c) break;
-      const m = makeMonster(weightedPick(monsterKeys, depth), c.x, c.y, depth);
-      if (depth >= 3 && Math.random() < 0.08 + depth * 0.01) makeElite(m);
-      monsters.push(m);
-    }
-
-    // Loot.
-    if (Math.random() < 0.7) {
-      const c = freeCellIn(room);
-      if (c) {
-        const r = Math.random();
-        const k = r < 0.5 ? "gold" : r < 0.8 ? "potion" : r < 0.92 ? "weapon" : "amulet";
-        items.push(makeItem(k, c.x, c.y, depth));
-      }
-    }
-  });
+  const itemCount = Math.min(cand.length - ci, 4 + Math.floor(Math.random() * 4));
+  for (let n = 0; n < itemCount && ci < cand.length; n++) {
+    const c = cand[ci++];
+    const r = Math.random();
+    const k = r < 0.5 ? "gold" : r < 0.8 ? "potion" : r < 0.92 ? "weapon" : "amulet";
+    items.push(makeItem(k, c.x, c.y, depth));
+  }
 
   return { monsters, items };
 }

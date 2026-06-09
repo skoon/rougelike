@@ -14,6 +14,18 @@ const VIEW_H = 15; // tiles shown vertically
 const FOV_RADIUS = 8;
 const MOVE_MS = 90; // tween duration
 
+// Depth themes: each picks a generation strategy and a tile palette
+// ([sheet, col, row]) for floor/wall/stairs. Deeper = later entries.
+const THEMES = [
+  { name: "the Crypt",       strategy: "rooms", floor: ["dungeon", 8, 2],   wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(6,5,12,0.55)" },
+  { name: "the Catacombs",   strategy: "bsp",   floor: ["dungeon", 16, 14], wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(10,7,4,0.55)" },
+  { name: "the Caverns",     strategy: "caves", floor: ["dungeon", 16, 12], wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(10,6,3,0.55)" },
+  { name: "the Sunken Depths", strategy: "caves", floor: ["dungeon", 16, 10], wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(4,8,14,0.6)" },
+];
+function themeForDepth(depth) {
+  return THEMES[Math.min(THEMES.length - 1, Math.floor((depth - 1) / 2))];
+}
+
 export class Game {
   constructor(canvas) {
     this.canvas = canvas;
@@ -92,13 +104,13 @@ export class Game {
 
   nextLevel() {
     this.depth++;
-    this.dungeon = new Dungeon(MAP_W, MAP_H);
-    const startRoom = this.dungeon.rooms[0];
-    const spawn = startRoom.randPoint();
+    this.theme = themeForDepth(this.depth);
+    this.dungeon = new Dungeon(MAP_W, MAP_H, this.theme.strategy);
+    const spawn = this.dungeon.startPos;
     const p = this.player;
     p.x = spawn.x; p.y = spawn.y; p.rx = spawn.x; p.ry = spawn.y;
 
-    const { monsters, items } = populate(this.dungeon, this.depth, startRoom);
+    const { monsters, items } = populate(this.dungeon, this.depth);
     this.monsters = monsters;
     this.items = items;
 
@@ -523,18 +535,19 @@ export class Game {
         const sy = Math.round((my - camY) * CELL);
         const tile = d.tiles[i];
 
+        const theme = this.theme;
         if (tile === WALL) {
-          drawSprite(ctx, SPR.wall, sx, sy, CELL);
+          drawSprite(ctx, theme.wall, sx, sy, CELL);
         } else {
-          drawSprite(ctx, SPR.floor, sx, sy, CELL);
+          drawSprite(ctx, theme.floor, sx, sy, CELL);
           const dec = d.decor[i];
           if (dec) drawSprite(ctx, SPR[dec], sx, sy, CELL);
-          if (tile === STAIRS) drawSprite(ctx, SPR.stairs, sx, sy, CELL);
+          if (tile === STAIRS) drawSprite(ctx, theme.stairs, sx, sy, CELL);
         }
 
         if (!d.visible[i]) {
-          // explored-but-unseen: darken
-          ctx.fillStyle = "rgba(6,5,12,0.55)";
+          // explored-but-unseen: darken with the theme's tint
+          ctx.fillStyle = theme.tint;
           ctx.fillRect(sx, sy, CELL, CELL);
         }
       }
@@ -697,11 +710,14 @@ export class Game {
       const textA = Math.max(0, (a - 0.15) / 0.85);
       ctx.save();
       ctx.globalAlpha = textA;
-      ctx.fillStyle = "#e8e4d8";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      ctx.fillStyle = "#e8e4d8";
       ctx.font = "bold 30px 'Trebuchet MS', system-ui, sans-serif";
-      ctx.fillText(`Depth ${this.depth}`, w / 2, h / 2);
+      ctx.fillText(`Depth ${this.depth}`, w / 2, h / 2 - 10);
+      ctx.fillStyle = "#d98e3a";
+      ctx.font = "italic 17px 'Trebuchet MS', system-ui, sans-serif";
+      ctx.fillText(this.theme.name, w / 2, h / 2 + 16);
       ctx.restore();
     }
   }

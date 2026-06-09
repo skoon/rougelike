@@ -40,12 +40,19 @@ Claude preview tooling.
 | `js/game.js` | `Game`, `showOverlay()` | State, turn loop, combat, render, input, HUD |
 
 ### `Dungeon` (js/dungeon.js) cheat-sheet
+- Construct: `new Dungeon(w, h, strategy)` where strategy ∈ `"rooms" | "bsp" | "caves"`.
 - Fields: `tiles` (Int array, `WALL|FLOOR|STAIRS`), `decor` (visual-only key per cell),
-  `visible`, `explored` (bool arrays), `rooms` (Room[]), `stairs` ({x,y}).
-- Methods: `generate()`, `carveRoom`, `carveCorridor`, `carveH/V`, `scatterDecor`,
-  `roomCells(room)`, `idx/inBounds/get/set`, `isWalkable`, `blocksSight`,
-  `computeFov(ox,oy,radius)`, `lineOfSight(x0,y0,x1,y1)` (Bresenham).
-- Generation is **room + L-corridor** only. FOV is **per-cell raycast within radius**.
+  `visible`, `explored` (bool arrays), `rooms` (Room[]; empty for caves),
+  `startPos` ({x,y} entrance), `stairs` ({x,y}), `floors` (reachable floor cells).
+- Generation: `generate(strategy)` → `genRooms`/`genBSP`/`genCaves` → `finalize()`.
+  `finalize()` floods from `startPos` (`_bfsFrom`), **seals unreachable floor**, places
+  stairs at the farthest reachable cell, and builds `floors`. So *every* strategy is
+  guaranteed connected with reachable stairs.
+- Other: `carveRoom/carveCorridor/carveH/V`, `scatterDecor`, `roomCells(room)`,
+  `_largestRegionCell`, `idx/inBounds/get/set`, `isWalkable`, `blocksSight`,
+  `computeFov(ox,oy,radius)`, `lineOfSight(...)` (Bresenham).
+- FOV is **per-cell raycast within radius**. Spawning (`populate`) uses `floors`+`startPos`,
+  not rooms, so it works for all strategies.
 
 ### `Game` (js/game.js) cheat-sheet
 - Constants at top: `MAP_W=50`, `MAP_H=38`, `SCALE=2`, `CELL=32`, `VIEW_W=21`,
@@ -201,27 +208,26 @@ milestone are roughly ordered; most are independently shippable.
   - Deferred polish: A* path on click (currently one greedy step) and an on-screen
     touch d-pad — revisit alongside M4-T4.
 
-### M1 — Deeper procedural generation
+### M1 — Deeper procedural generation  *(T1–T4 done; T5–T6 pending)*
 **Goal:** varied, themeable, always-connected floors.
 
-- [ ] **M1-T1 — Generator strategy seam.** Refactor `Dungeon.generate()` to call a
-  pluggable generator so multiple algorithms can coexist.
-  - Files: `js/dungeon.js` (extract current logic into `genRoomsAndCorridors()`; add a
-    `generate(strategy)` dispatch).
-  - Done when: current behavior is preserved behind a named strategy.
-- [ ] **M1-T2 — New generators.** Add BSP rooms and cellular-automata caves.
-  - Files: `js/dungeon.js` (new `genBSP()`, `genCaves()`).
-  - Done when: each produces a playable, connected map.
-- [ ] **M1-T3 — Connectivity guarantee.** Flood-fill from spawn; reconnect or discard
-  unreachable regions; verify stairs reachable.
-  - Files: `js/dungeon.js` (post-process step in `generate`).
-  - Done when: stairs are always reachable across 100 regen tests.
-- [ ] **M1-T4 — Theming by depth.** Introduce a `theme` mapping tile-roles → `SPR`,
-  selected by depth (crypt → caverns → city → interior).
-  - Files: `js/assets.js` (load Base/City/Interior sheets in `SHEETS`; add coords),
-    `js/dungeon.js`/`js/game.js` (render via theme instead of hard-coded `SPR.floor`
-    etc.).
-  - Done when: at least 2 visually distinct themes appear at different depths.
+> T1–T4 implemented: `Dungeon(w,h,strategy)` dispatches to `genRooms`/`genBSP`/
+> `genCaves`, then a shared `finalize()` floods from `startPos`, **seals any
+> unreachable floor**, and places the stairs at the farthest reachable cell —
+> guaranteeing connectivity for every strategy. `populate()` (entities.js) is now
+> generator-agnostic (scatters over `dungeon.floors` away from the entrance).
+> `THEMES` in game.js select a strategy + tile palette + fog tint by depth
+> (Crypt → Catacombs → Caverns → Sunken Depths), shown in the descent caption.
+> Verified with a 600-run Node harness: 0 failures, 0 unreachable tiles.
+
+- [x] **M1-T1 — Generator strategy seam.** `generate(strategy)` dispatch + `finalize()`.
+- [x] **M1-T2 — New generators.** `genBSP()` (BSP rooms) and `genCaves()` (cellular automata).
+- [x] **M1-T3 — Connectivity guarantee.** `finalize()` floods from `startPos`, walls off
+  unreachable floor, and places stairs at the BFS-farthest reachable cell.
+- [x] **M1-T4 — Theming by depth.** `THEMES`/`themeForDepth` in game.js drive
+  floor/wall/stairs sprites + fog tint per depth.
+  - Note: palettes currently all come from the Dungeon sheet (4 distinct looks).
+    Loading the Base/City/Interior sheets for richer tilesets is a follow-up.
 - [ ] **M1-T5 — Special rooms.** Treasure vault (locked + key), monster nest, shrine.
   - Files: `js/dungeon.js` (tag rooms), `js/entities.js` (`populate` honors tags),
     plus a `key` item + locked-door tile.
