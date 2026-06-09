@@ -49,12 +49,29 @@ export function makeElite(m) {
   return m;
 }
 
-// Item templates.
+const BOSS_NAMES = ["the Bone Tyrant", "the Crypt Warden", "the Sunken King", "the Lord of Dust"];
+
+// A unique, oversized foe for boss floors.
+export function makeBoss(x, y, depth) {
+  const m = makeMonster("knight", x, y, depth);
+  m.boss = true;
+  m.name = BOSS_NAMES[Math.min(BOSS_NAMES.length - 1, Math.floor(depth / 5) - 1)] || "the Tyrant";
+  m.tint = "#7d3cff";
+  m.maxHp = 55 + depth * 9;
+  m.hp = m.maxHp;
+  m.atk = 9 + depth;
+  m.def = 4;
+  m.xp = 70 + depth * 12;
+  return m;
+}
+
+// Item templates. The key is drawn procedurally (no key sprite in the packs).
 export const ITEMS = {
   gold:   { sprite: "gold",   name: "gold" },
   potion: { sprite: "potion", name: "healing potion" },
   weapon: { sprite: "weapon", name: "sharpened blade" },
   amulet: { sprite: "amulet", name: "glittering amulet" },
+  key:    { sprite: "key",    name: "iron key" },
 };
 
 export function makeItem(key, x, y, depth) {
@@ -122,6 +139,35 @@ export function populate(dungeon, depth) {
     const r = Math.random();
     const k = r < 0.5 ? "gold" : r < 0.8 ? "potion" : r < 0.92 ? "weapon" : "amulet";
     items.push(makeItem(k, c.x, c.y, depth));
+  }
+
+  // --- Locked treasure vault: a key out in the open + rich loot inside. ---
+  if (dungeon.hasVault && dungeon.vaultCells.length) {
+    if (ci < cand.length) items.push(makeItem("key", cand[ci].x, cand[ci++].y, depth));
+    const vcells = shuffle(dungeon.vaultCells.slice());
+    const lootKinds = ["amulet", "gold", "weapon", "potion"];
+    const lootN = Math.min(vcells.length, 3 + Math.floor(Math.random() * 2));
+    for (let n = 0; n < lootN; n++) {
+      items.push(makeItem(lootKinds[n % lootKinds.length], vcells[n].x, vcells[n].y, depth));
+    }
+    // A guardian waits inside.
+    if (vcells.length > lootN) {
+      const g = vcells[lootN];
+      monsters.push(makeElite(makeMonster(weightedPick(monsterKeys, depth + 2), g.x, g.y, depth + 1)));
+    }
+  }
+
+  // --- Monster nest: a dense cluster, with a small reward. ---
+  if (dungeon.nestCells.length) {
+    const ncells = shuffle(dungeon.nestCells.slice());
+    const nN = Math.min(ncells.length - 1, 4 + Math.floor(depth / 2) + Math.floor(Math.random() * 3));
+    for (let n = 0; n < nN; n++) {
+      monsters.push(makeMonster(weightedPick(monsterKeys, depth), ncells[n].x, ncells[n].y, depth));
+    }
+    if (ncells.length > nN) {
+      const c = ncells[nN];
+      items.push(makeItem(Math.random() < 0.5 ? "gold" : "potion", c.x, c.y, depth));
+    }
   }
 
   return { monsters, items };

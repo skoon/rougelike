@@ -1,8 +1,8 @@
 // Core game: state, turn loop, combat, rendering, input, HUD.
 
 import { drawSprite, SPR, TILE } from "./assets.js";
-import { Dungeon, WALL, FLOOR, STAIRS } from "./dungeon.js";
-import { populate, makeMonster } from "./entities.js";
+import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE } from "./dungeon.js";
+import { populate, makeMonster, makeBoss } from "./entities.js";
 import { audio } from "./audio.js";
 
 const MAP_W = 50;
@@ -84,6 +84,7 @@ export class Game {
       atk: 5, def: 1,
       level: 1, xp: 0, xpNext: 20,
       gold: 0,
+      keys: 0,
       alive: true,
     };
     this.messages = [];
@@ -114,10 +115,31 @@ export class Game {
     this.monsters = monsters;
     this.items = items;
 
+    // Boss floor every 5 depths: spawn a unique guardian near the stairs.
+    this.isBossFloor = this.depth % 5 === 0;
+    if (this.isBossFloor) {
+      const spot = this.findFloorNear(this.dungeon.stairs, 5) || this.dungeon.stairs;
+      this.monsters.push(makeBoss(spot.x, spot.y, this.depth));
+      this.log("A mighty presence guards this floor.", "bad");
+    }
+
     this.dungeon.computeFov(p.x, p.y, FOV_RADIUS);
     this.centerCamera(true);
     if (this.depth > 1) this.log(`You reach depth ${this.depth}.`, "dim");
     this.updateHud();
+  }
+
+  // Find a free floor cell within `rad` of `pos` (for boss placement).
+  findFloorNear(pos, rad) {
+    const opts = [];
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        const x = pos.x + dx, y = pos.y + dy;
+        if (x === pos.x && y === pos.y) continue;
+        if (this.dungeon.get(x, y) === FLOOR && !this.monsterAt(x, y)) opts.push({ x, y });
+      }
+    }
+    return opts.length ? opts[Math.floor(Math.random() * opts.length)] : null;
   }
 
   // ------------------------------------------------------------------- input
@@ -175,6 +197,18 @@ export class Game {
       const target = this.monsterAt(nx, ny);
       if (target) {
         this.attack(p, target);
+      } else if (this.dungeon.get(nx, ny) === LOCKED) {
+        if (p.keys > 0) {
+          p.keys--;
+          this.dungeon.set(nx, ny, FLOOR);
+          this.log("You unlock the door.", "good");
+          audio.pickup();
+          p.x = nx; p.y = ny;
+          audio.move();
+        } else {
+          this.log("The door is locked — you need a key.", "dim");
+          return; // no turn spent
+        }
       } else if (this.dungeon.isWalkable(nx, ny)) {
         p.x = nx; p.y = ny;
         audio.move();
@@ -184,6 +218,8 @@ export class Game {
     }
 
     this.pickupAt(p.x, p.y);
+
+    if (this.dungeon.get(p.x, p.y) === SHRINE) this.useShrine();
 
     if (this.dungeon.get(p.x, p.y) === STAIRS) {
       this.beginDescent();
@@ -198,6 +234,20 @@ export class Game {
 
   startTween() {
     this.busyUntil = performance.now() + MOVE_MS;
+  }
+
+  // One-time shrine blessing: full heal plus a small permanent boon.
+  useShrine() {
+    const p = this.player;
+    this.dungeon.set(p.x, p.y, FLOOR);
+    if (this.dungeon.shrinePos) this.dungeon.shrinePos = null;
+    p.hp = p.maxHp;
+    const boon = Math.random();
+    if (boon < 0.34) { p.maxHp += 5; p.hp = p.maxHp; this.log("The shrine blesses you — max HP up!", "gold"); }
+    else if (boon < 0.67) { p.atk += 1; this.log("The shrine blesses you — attack up!", "gold"); }
+    else { p.def += 1; this.log("The shrine blesses you — defense up!", "gold"); }
+    audio.levelUp();
+    this.spawnParticles(p.rx, p.ry, "#7fe6ff", 14, true);
   }
 
   // Kick off a fade-to-black transition; the new level is generated at the
@@ -381,6 +431,10 @@ export class Game {
         p.atk += 2;
         this.log("You find a sharper blade. Attack up!", "good");
         break;
+      case "key":
+        p.keys++;
+        this.log("You pick up an iron key.", "gold");
+        break;
     }
     audio.pickup();
     this.spawnParticles(p.rx, p.ry, "#ffcf6b", 10, true);
@@ -418,6 +472,7 @@ export class Game {
       <span class="stat">ATK <b>${p.atk}</b></span>
       <span class="stat">DEF <b>${p.def}</b></span>
       <span class="stat">Gold <b>${p.gold}</b></span>
+      ${p.keys > 0 ? `<span class="stat">Keys <b>${p.keys}</b></span>` : ""}
       <span class="stat">Depth <b>${this.depth}</b></span>`;
   }
 
@@ -538,11 +593,16 @@ export class Game {
         const theme = this.theme;
         if (tile === WALL) {
           drawSprite(ctx, theme.wall, sx, sy, CELL);
+        } else if (tile === LOCKED) {
+          drawSprite(ctx, theme.floor, sx, sy, CELL);
+          drawSprite(ctx, SPR.door, sx, sy, CELL);
+          this.drawLock(sx, sy);
         } else {
           drawSprite(ctx, theme.floor, sx, sy, CELL);
           const dec = d.decor[i];
           if (dec) drawSprite(ctx, SPR[dec], sx, sy, CELL);
           if (tile === STAIRS) drawSprite(ctx, theme.stairs, sx, sy, CELL);
+          if (tile === SHRINE) this.drawShrine(sx, sy);
         }
 
         if (!d.visible[i]) {
@@ -567,7 +627,8 @@ export class Game {
       if (!d.visible[i]) continue;
       const sx = Math.round((it.x - camX) * CELL);
       const sy = Math.round((it.y - camY) * CELL);
-      drawSprite(ctx, SPR[it.sprite], sx, sy, CELL);
+      if (it.key === "key") this.drawKey(sx, sy);
+      else drawSprite(ctx, SPR[it.sprite], sx, sy, CELL);
     }
 
     // --- death effects (fade + rise to a shadow) ---
@@ -649,6 +710,8 @@ export class Game {
         let col;
         if (t === WALL) col = "#2b2a3c";
         else if (t === STAIRS) col = "#e0a040";
+        else if (t === LOCKED) col = "#b06a2e";
+        else if (t === SHRINE) col = "#7fe6ff";
         else col = "#69697e";
         mm.globalAlpha = d.visible[i] ? 1 : 0.5;
         mm.fillStyle = col;
@@ -698,6 +761,73 @@ export class Game {
     ctx.restore();
   }
 
+  // Small padlock badge on a locked door.
+  drawLock(sx, sy) {
+    const ctx = this.ctx;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2;
+    ctx.save();
+    ctx.fillStyle = "#1a1208";
+    ctx.fillRect(cx - 4, cy - 1, 8, 7);
+    ctx.strokeStyle = "#f4c542";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - 4, cy - 1, 8, 7);
+    ctx.beginPath();
+    ctx.arc(cx, cy - 1, 2.6, Math.PI, 0); // shackle
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Pulsing holy glyph for a shrine tile.
+  drawShrine(sx, sy) {
+    const ctx = this.ctx;
+    const pulse = 0.5 + 0.5 * Math.sin(this.now / 300);
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.2 + 0.3 * pulse;
+    ctx.fillStyle = "#7fe6ff";
+    ctx.beginPath();
+    ctx.arc(cx, cy, CELL * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = "#eafcff";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    const r = 5 + pulse;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+    ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Procedural gold key (no key sprite exists in the asset packs).
+  drawKey(sx, sy) {
+    const ctx = this.ctx;
+    const bob = Math.sin(this.now / 300) * 1.5;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + bob;
+    ctx.save();
+    ctx.strokeStyle = "#f4c542";
+    ctx.fillStyle = "#f4c542";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(cx - 4, cy, 3.5, 0, Math.PI * 2); // bow
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 1, cy);
+    ctx.lineTo(cx + 7, cy); // shaft
+    ctx.stroke();
+    ctx.fillRect(cx + 5, cy, 2, 4); // teeth
+    ctx.fillRect(cx + 2, cy, 2, 3);
+    ctx.restore();
+  }
+
   // Black fade with a "Depth N" caption as the new floor fades in.
   drawTransition(ctx) {
     const a = this.transition.alpha;
@@ -715,9 +845,15 @@ export class Game {
       ctx.fillStyle = "#e8e4d8";
       ctx.font = "bold 30px 'Trebuchet MS', system-ui, sans-serif";
       ctx.fillText(`Depth ${this.depth}`, w / 2, h / 2 - 10);
-      ctx.fillStyle = "#d98e3a";
-      ctx.font = "italic 17px 'Trebuchet MS', system-ui, sans-serif";
-      ctx.fillText(this.theme.name, w / 2, h / 2 + 16);
+      if (this.isBossFloor) {
+        ctx.fillStyle = "#e0594b";
+        ctx.font = "bold italic 18px 'Trebuchet MS', system-ui, sans-serif";
+        ctx.fillText("⚔ Boss Floor ⚔", w / 2, h / 2 + 16);
+      } else {
+        ctx.fillStyle = "#d98e3a";
+        ctx.font = "italic 17px 'Trebuchet MS', system-ui, sans-serif";
+        ctx.fillText(this.theme.name, w / 2, h / 2 + 16);
+      }
       ctx.restore();
     }
   }

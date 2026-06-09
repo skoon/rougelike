@@ -41,9 +41,11 @@ Claude preview tooling.
 
 ### `Dungeon` (js/dungeon.js) cheat-sheet
 - Construct: `new Dungeon(w, h, strategy)` where strategy ∈ `"rooms" | "bsp" | "caves"`.
-- Fields: `tiles` (Int array, `WALL|FLOOR|STAIRS`), `decor` (visual-only key per cell),
-  `visible`, `explored` (bool arrays), `rooms` (Room[]; empty for caves),
-  `startPos` ({x,y} entrance), `stairs` ({x,y}), `floors` (reachable floor cells).
+- Tile types: `WALL|FLOOR|STAIRS|LOCKED|SHRINE`. `LOCKED` blocks move+sight until a key
+  opens it; `SHRINE` is walkable and triggers a one-time blessing.
+- Fields: `tiles`, `decor`, `visible`, `explored`, `rooms` (empty for caves),
+  `startPos`, `stairs`, `floors` (reachable, no-key, excludes vault),
+  `vaultCells`/`nestCells`/`shrinePos`/`hasVault` (special rooms; room strategies only).
 - Generation: `generate(strategy)` → `genRooms`/`genBSP`/`genCaves` → `finalize()`.
   `finalize()` floods from `startPos` (`_bfsFrom`), **seals unreachable floor**, places
   stairs at the farthest reachable cell, and builds `floors`. So *every* strategy is
@@ -114,7 +116,7 @@ Order chosen for impact-per-effort and to lean on assets already owned:
 
 ```
 M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, cheap wins
-        → M1 (procgen depth) → M4 (combat systems) ← add DEPTH
+        → M1 [done] → M4 (combat systems)          ← add DEPTH
         → M6 (meta/progression) → M7 (world/content) ← make it a COMPLETE game
 ```
 
@@ -208,7 +210,7 @@ milestone are roughly ordered; most are independently shippable.
   - Deferred polish: A* path on click (currently one greedy step) and an on-screen
     touch d-pad — revisit alongside M4-T4.
 
-### M1 — Deeper procedural generation  *(T1–T4 done; T5–T6 pending)*
+### M1 — Deeper procedural generation  *(DONE)*
 **Goal:** varied, themeable, always-connected floors.
 
 > T1–T4 implemented: `Dungeon(w,h,strategy)` dispatches to `genRooms`/`genBSP`/
@@ -228,13 +230,14 @@ milestone are roughly ordered; most are independently shippable.
   floor/wall/stairs sprites + fog tint per depth.
   - Note: palettes currently all come from the Dungeon sheet (4 distinct looks).
     Loading the Base/City/Interior sheets for richer tilesets is a follow-up.
-- [ ] **M1-T5 — Special rooms.** Treasure vault (locked + key), monster nest, shrine.
-  - Files: `js/dungeon.js` (tag rooms), `js/entities.js` (`populate` honors tags),
-    plus a `key` item + locked-door tile.
-  - Done when: special rooms generate and the key/lock interaction works.
-- [ ] **M1-T6 — Boss floors.** Every N depths, a special layout + a boss monster.
-  - Files: `js/dungeon.js`, `js/entities.js`, `js/game.js` (`nextLevel`).
-  - Done when: boss floors trigger on schedule with a tougher unique enemy.
+- [x] **M1-T5 — Special rooms.** `_placeSpecials()` (dungeon.js) tags non-start rooms as a
+  locked **treasure vault** (border cells → `LOCKED`; reverts if it would orphan the map),
+  a **monster nest**, and/or a **shrine** (`SHRINE` tile). `populate()` drops a reachable
+  **key** + rich vault loot + a guardian, and clusters monsters in nests. game.js handles
+  unlocking (consumes a key), the one-time shrine blessing (`useShrine`), and renders the
+  door/shrine/key (key drawn procedurally — no key sprite in the packs).
+- [x] **M1-T6 — Boss floors.** Every 5th depth spawns a unique tinted `makeBoss` near the
+  stairs; announced in the log and the descent caption ("⚔ Boss Floor ⚔").
 
 ### M4 — Combat & RPG systems
 **Goal:** decisions beyond bump-attack.

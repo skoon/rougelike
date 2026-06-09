@@ -3,6 +3,8 @@
 export const WALL = 0;
 export const FLOOR = 1;
 export const STAIRS = 2;
+export const LOCKED = 3; // locked door: blocks movement + sight until a key opens it
+export const SHRINE = 4; // steppable tile granting a one-time blessing
 
 const rnd = (n) => Math.floor(Math.random() * n);
 const rint = (min, max) => min + rnd(max - min + 1);
@@ -41,6 +43,10 @@ export class Dungeon {
     this.startPos = null; // where the player enters
     this.stairs = null; // where the player descends
     this.floors = []; // all reachable floor cells (for spawning)
+    this.vaultCells = []; // interior of the locked treasure vault (if any)
+    this.nestCells = []; // interior of the monster nest (if any)
+    this.shrinePos = null; // {x,y} of the shrine tile (if any)
+    this.hasVault = false;
     this.strategy = strategy;
     this.generate(strategy);
   }
@@ -52,9 +58,12 @@ export class Dungeon {
 
   isWalkable(x, y) {
     const t = this.get(x, y);
-    return t === FLOOR || t === STAIRS;
+    return t === FLOOR || t === STAIRS || t === SHRINE;
   }
-  blocksSight(x, y) { return this.get(x, y) === WALL; }
+  blocksSight(x, y) {
+    const t = this.get(x, y);
+    return t === WALL || t === LOCKED;
+  }
 
   // Dispatch to a generation strategy, then run the shared finalize pass that
   // guarantees connectivity and places reachable stairs.
@@ -83,6 +92,7 @@ export class Dungeon {
       this.rooms.push(room);
     }
     this.startPos = { x: this.rooms[0].cx, y: this.rooms[0].cy };
+    this._placeSpecials();
   }
 
   // --- Strategy: binary space partition into rooms, joined in sequence. ---
@@ -108,6 +118,42 @@ export class Dungeon {
     this.startPos = this.rooms.length
       ? { x: this.rooms[0].cx, y: this.rooms[0].cy }
       : null;
+    this._placeSpecials();
+  }
+
+  // Designate a few non-start rooms as a locked treasure vault, a monster nest,
+  // and/or a shrine. Only meaningful for room-based strategies.
+  _placeSpecials() {
+    if (this.rooms.length < 3) return;
+    const pool = this.rooms.slice(1);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = rnd(i + 1);
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+
+    if (Math.random() < 0.7) {
+      const room = pool.pop();
+      this.vaultCells = this.roomCells(room);
+      // Lock every floor cell bordering the vault so the only way in is keyed.
+      for (const c of this.vaultCells) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = c.x + dx, ny = c.y + dy;
+          const inside = nx >= room.x && nx < room.x + room.w && ny >= room.y && ny < room.y + room.h;
+          if (!inside && this.get(nx, ny) === FLOOR) this.set(nx, ny, LOCKED);
+        }
+      }
+      this.hasVault = true;
+    }
+
+    if (pool.length && Math.random() < 0.6) {
+      this.nestCells = this.roomCells(pool.pop());
+    }
+
+    if (pool.length && Math.random() < 0.6) {
+      const room = pool.pop();
+      this.shrinePos = { x: room.cx, y: room.cy };
+      this.set(room.cx, room.cy, SHRINE);
+    }
   }
 
   _splitBSP(node, depth, leaves) {
@@ -161,7 +207,24 @@ export class Dungeon {
     if (!this.startPos || !this.isWalkable(this.startPos.x, this.startPos.y)) {
       this.startPos = this._firstFloor();
     }
-    const dist = this._bfsFrom(this.startPos.x, this.startPos.y);
+    let dist = this._bfsFrom(this.startPos.x, this.startPos.y);
+    let vaultSet = new Set(this.vaultCells.map((c) => this.idx(c.x, c.y)));
+
+    // If locking the vault orphaned more non-vault floor than the vault itself,
+    // it was a pass-through room: unlock it rather than seal a real region.
+    if (this.hasVault) {
+      let lost = 0;
+      for (let i = 0; i < this.tiles.length; i++)
+        if (this.tiles[i] === FLOOR && dist[i] < 0 && !vaultSet.has(i)) lost++;
+      if (lost > this.vaultCells.length) {
+        for (let i = 0; i < this.tiles.length; i++)
+          if (this.tiles[i] === LOCKED) this.tiles[i] = FLOOR;
+        this.hasVault = false;
+        this.vaultCells = [];
+        vaultSet = new Set();
+        dist = this._bfsFrom(this.startPos.x, this.startPos.y);
+      }
+    }
 
     let farthest = { ...this.startPos };
     let far = -1;
@@ -169,18 +232,21 @@ export class Dungeon {
       for (let x = 0; x < this.w; x++) {
         const i = this.idx(x, y);
         if (this.tiles[i] !== FLOOR) continue;
-        if (dist[i] < 0) this.tiles[i] = WALL; // unreachable: seal it
-        else if (dist[i] > far) { far = dist[i]; farthest = { x, y }; }
+        // Seal floor the player can't reach without a key, except the vault.
+        if (dist[i] < 0) { if (!vaultSet.has(i)) this.tiles[i] = WALL; continue; }
+        if (dist[i] > far) { far = dist[i]; farthest = { x, y }; }
       }
     }
 
     this.stairs = farthest;
     this.set(farthest.x, farthest.y, STAIRS);
 
+    // Reachable (no-key) floor for normal spawning; vault loot is placed separately.
     this.floors = [];
     for (let y = 0; y < this.h; y++)
       for (let x = 0; x < this.w; x++)
-        if (this.get(x, y) === FLOOR) this.floors.push({ x, y });
+        if (this.tiles[this.idx(x, y)] === FLOOR && dist[this.idx(x, y)] >= 0)
+          this.floors.push({ x, y });
 
     this.scatterDecor();
   }
@@ -198,7 +264,9 @@ export class Dungeon {
         const nx = x + dx, ny = y + dy;
         if (!this.inBounds(nx, ny)) continue;
         const ni = this.idx(nx, ny);
-        if (dist[ni] !== -1 || this.tiles[ni] !== FLOOR) continue;
+        // Player reachability without a key: walls and locked doors stop it.
+        const t = this.tiles[ni];
+        if (dist[ni] !== -1 || t === WALL || t === LOCKED) continue;
         dist[ni] = d + 1;
         q.push([nx, ny]);
       }

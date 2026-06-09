@@ -32,6 +32,8 @@ Volume (master/music/SFX), mute, and a screen-shake toggle live in the footer
   cellular-automata caves) selected by depth-themed biomes (Crypt → Catacombs →
   Caverns → Sunken Depths), each with its own tile palette and fog. Every floor is
   guaranteed fully connected with reachable stairs.
+- Special rooms: locked treasure vaults (find the key), monster nests, and shrines
+  that grant a one-time blessing. A unique boss guards every fifth floor.
 - Line-of-sight field of view with remembered (dimmed) explored tiles.
 - Bump-to-attack combat; defeating foes grants XP. Level-ups raise max HP, attack,
   and periodically defense.
