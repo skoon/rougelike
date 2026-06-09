@@ -3,6 +3,7 @@
 import { drawSprite, SPR, TILE } from "./assets.js";
 import { Dungeon, WALL, FLOOR, STAIRS } from "./dungeon.js";
 import { populate, makeMonster } from "./entities.js";
+import { audio } from "./audio.js";
 
 const MAP_W = 50;
 const MAP_H = 38;
@@ -64,6 +65,10 @@ export class Game {
     this.transition = null;
     this.busyUntil = 0;
     this.over = false;
+    // start() runs from a user gesture (button click / R key), so it is a
+    // valid place to unlock audio and begin the ambient bed.
+    audio.init();
+    audio.startAmbient();
     this.log("You descend into the catacombs...", "dim");
     this.nextLevel();
     requestAnimationFrame(this.loop);
@@ -122,6 +127,7 @@ export class Game {
         this.attack(p, target);
       } else if (this.dungeon.isWalkable(nx, ny)) {
         p.x = nx; p.y = ny;
+        audio.move();
       } else {
         return; // bumped a wall: no turn spent
       }
@@ -148,6 +154,7 @@ export class Game {
   // midpoint (while the screen is fully dark) so the swap is never visible.
   beginDescent() {
     this.log("You find a staircase leading deeper.", "good");
+    audio.descend();
     this.busyUntil = Infinity; // lock input for the whole transition
     this.transition = { phase: "out", alpha: 0, duration: 420 };
     this.transitionStart = this.now;
@@ -224,14 +231,18 @@ export class Game {
     attacker.lungeDy = ldy;
     defender.flashUntil = this.now + 130;
 
+    if (attacker.kind === "player") audio.swing();
+
     const raw = attacker.atk - defender.def;
     const dmg = Math.max(1, raw + (Math.floor(Math.random() * 3) - 1));
     defender.hp -= dmg;
 
     if (attacker.kind === "player") {
       this.log(`You hit the ${defender.name} for ${dmg}.`, "good");
+      audio.hit();
     } else if (defender.kind === "player") {
       this.log(`The ${attacker.name} hits you for ${dmg}.`, "bad");
+      audio.hurt();
     }
 
     if (defender.hp <= 0) {
@@ -240,6 +251,7 @@ export class Game {
       } else {
         defender.alive = false;
         this.log(`The ${defender.name} dies.`, "dim");
+        audio.enemyDie();
         this.effects.push({
           type: "death",
           layers: defender.layers,
@@ -264,6 +276,7 @@ export class Game {
       p.atk += 1;
       if (p.level % 3 === 0) p.def += 1;
       this.log(`You reach level ${p.level}! You feel stronger.`, "gold");
+      audio.levelUp();
     }
   }
 
@@ -271,6 +284,7 @@ export class Game {
     this.player.alive = false;
     this.over = true;
     this.log("You have fallen in the dark.", "bad");
+    audio.playerDie();
     showOverlay(
       "You Died",
       `You reached depth ${this.depth} at level ${this.player.level} with ${this.player.gold} gold.`,
@@ -298,13 +312,16 @@ export class Game {
         const heal = Math.min(p.maxHp - p.hp, 12);
         p.hp += heal;
         this.log(`You quaff a potion and recover ${heal} HP.`, "good");
-        break;
+        audio.potion();
+        this.items.splice(idx, 1);
+        return;
       }
       case "weapon":
         p.atk += 2;
         this.log("You find a sharper blade. Attack up!", "good");
         break;
     }
+    audio.pickup();
     this.items.splice(idx, 1);
   }
 

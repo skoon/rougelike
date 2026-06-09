@@ -36,6 +36,7 @@ Claude preview tooling.
 | `js/assets.js` | `TILE` (16), `loadAssets()`, `SPR`, `drawSprite(ctx,spr,dx,dy,size)` | Sheet loading + sprite atlas |
 | `js/dungeon.js` | `WALL/FLOOR/STAIRS`, `Room`, `Dungeon` | Map generation + field of view |
 | `js/entities.js` | `MONSTERS`, `ITEMS`, `makeMonster`, `makeItem`, `populate` | Actor/item templates + spawning |
+| `js/audio.js` | `audio` (AudioManager singleton) | Web Audio buses, procedural SFX, ambient drone, volume persistence |
 | `js/game.js` | `Game`, `showOverlay()` | State, turn loop, combat, render, input, HUD |
 
 ### `Dungeon` (js/dungeon.js) cheat-sheet
@@ -105,7 +106,7 @@ Claude preview tooling.
 Order chosen for impact-per-effort and to lean on assets already owned:
 
 ```
-M3 [done] → M2 (audio) → M5 (UI/juice)            ← make it FEEL good, cheap wins
+M3 [done] → M2 [done] → M5 (UI/juice)             ← make it FEEL good, cheap wins
         → M1 (procgen depth) → M4 (combat systems) ← add DEPTH
         → M6 (meta/progression) → M7 (world/content) ← make it a COMPLETE game
 ```
@@ -158,25 +159,25 @@ milestone are roughly ordered; most are independently shippable.
     render tint pass.
   - Done when: occasional tinted elites appear deeper and hit harder.
 
-### M2 — Audio
+### M2 — Audio  *(DONE)*
 **Goal:** SFX + ambience with volume control. No audio assets exist yet.
 
-- [ ] **M2-T1 — AudioManager module.** Web Audio context, master/SFX/music gain nodes,
+> Implemented in `js/audio.js` as a singleton `audio` (AudioManager): a Web Audio
+> graph (master → destination, with `sfxGain`/`musicGain` buses), fully
+> procedural SFX (no asset files), an ambient detuned-saw drone with a slow
+> filter LFO, and `localStorage`-persisted volumes. `Game.start()` calls
+> `audio.init()` + `startAmbient()` from the start gesture; SFX fire from
+> `turn/attack/gainXp/pickupAt/beginDescent/die`. A footer mute button + master
+> slider are wired in `js/main.js`.
+
+- [x] **M2-T1 — AudioManager module.** Web Audio context, master/SFX/music gain nodes,
   mute toggle, settings persisted to `localStorage`.
-  - Files: new `js/audio.js`; `js/main.js` (init after a user gesture — the Enter button —
-    to satisfy autoplay policies).
-  - Done when: a test beep plays on game start with no autoplay warnings.
-- [ ] **M2-T2 — Procedural SFX.** Oscillator/noise one-shots for move, attack, hit,
+- [x] **M2-T2 — Procedural SFX.** Oscillator/noise one-shots for move, attack, hit,
   enemy death, pickup, potion, level-up, descend, player death.
-  - Files: `js/audio.js` (e.g. `sfx.hit()`), call sites in `js/game.js` (`turn`,
-    `attack`, `pickupAt`, `gainXp`, `nextLevel`, `die`).
-  - Done when: each listed event triggers a distinct sound.
-- [ ] **M2-T3 — Ambient loop / music.** Low dungeon drone or simple generative loop.
-  - Files: `js/audio.js`. Approach: looped buffer or scheduled notes; keep it optional.
-  - Done when: ambience loops and respects the music volume/mute.
-- [ ] **M2-T4 — Volume UI.** Sliders + mute in a settings panel (ties into M5-T5).
-  - Files: `index.html`, `css/style.css`, `js/audio.js`.
-  - Done when: sliders change levels live and persist across reloads.
+- [x] **M2-T3 — Ambient loop / music.** Low dungeon drone (continuous, on the music bus).
+- [x] **M2-T4 — Volume UI.** Footer master slider + mute toggle, persisted across reloads.
+  - Note: a fuller settings *panel* (per-bus sliders, etc.) is deferred to M5-T5;
+    `audio.setSfx()`/`setMusic()` already exist for it to hook into.
 
 ### M5 — Game feel & UI polish
 **Goal:** readability and juice.

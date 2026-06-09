@@ -34,12 +34,16 @@ python -m http.server 8123
   variants on deeper floors. The deeper you go, the deadlier it gets.
 - Animated actors: directional facing, idle bob, attack lunges, hit flashes and
   fade-out deaths. Death is permanent.
+- Fully procedural audio (no sound files): synthesized SFX for movement, combat,
+  pickups, level-ups and descent, plus an ambient dungeon drone. Master volume
+  and mute live in the footer and persist across sessions.
 
 ## Code layout
 
 | File              | Responsibility                                            |
 | ----------------- | --------------------------------------------------------- |
 | `js/assets.js`    | Sprite-sheet loading and tile coordinate definitions.     |
+| `js/audio.js`     | Web Audio buses, procedural SFX, ambient drone, volumes.  |
 | `js/dungeon.js`   | Map generation (rooms + corridors) and field of view.     |
 | `js/entities.js`  | Monster/item templates and per-depth spawning.            |
 | `js/game.js`      | Game state, turn loop, combat, rendering, input, HUD.     |
