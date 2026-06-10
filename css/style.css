@@ -333,6 +333,74 @@ canvas#game {
 }
 #settings-panel input[type="checkbox"] { accent-color: var(--accent); }
 
+#shop-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(6, 5, 12, 0.86);
+  z-index: 10;
+  line-height: normal;
+}
+#shop-panel.hidden { display: none; }
+
+#shop-card {
+  padding: 22px 28px;
+  background: var(--panel);
+  border: 2px solid var(--panel-edge);
+  border-radius: 8px;
+  min-width: 280px;
+  max-width: 380px;
+  width: 90%;
+}
+#shop-card h2 {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 20px;
+}
+#shop-card p {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+}
+#shop-items { margin-bottom: 14px; }
+.shop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--panel-edge);
+  font-size: 13px;
+}
+.shop-name { flex: 1; color: var(--ink); }
+.shop-price { color: var(--accent); font-weight: bold; min-width: 36px; text-align: right; }
+.shop-empty { color: var(--muted); font-style: italic; font-size: 13px; padding: 6px 0; }
+.shop-buy {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+  color: #111;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+}
+.shop-buy:hover { filter: brightness(1.1); }
+.shop-buy:disabled { opacity: 0.4; cursor: default; filter: none; }
+#shop-close {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 18px;
+  cursor: pointer;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+}
+#shop-close:hover { border-color: var(--accent); }
+
 #inventory-panel {
   position: absolute;
   left: 50%;

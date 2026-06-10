@@ -7,9 +7,18 @@ export const FLOOR = 1;
 export const STAIRS = 2;
 export const LOCKED = 3; // locked door: blocks movement + sight until a key opens it
 export const SHRINE = 4; // steppable tile granting a one-time blessing
+export const WATER = 5; // walkable hazard: cold water deals 1 damage per step
 
 const rnd = (n) => Math.floor(rng() * n);
 const rint = (min, max) => min + rnd(max - min + 1);
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = rnd(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 class Room {
   constructor(x, y, w, h) {
@@ -39,6 +48,9 @@ export class Dungeon {
     this.h = h;
     this.tiles = new Array(w * h).fill(WALL);
     this.decor = new Array(w * h).fill(null); // visual-only floor decoration
+    this.objs = new Array(w * h).fill(null);  // interactive objects (chests, barrels)
+    this.traps = new Set();                    // indices of hidden spike traps
+    this.lights = [];                          // [{x,y,radius}] torch light sources
     this.visible = new Array(w * h).fill(false);
     this.explored = new Array(w * h).fill(false);
     this.rooms = [];
@@ -60,8 +72,11 @@ export class Dungeon {
 
   isWalkable(x, y) {
     const t = this.get(x, y);
-    return t === FLOOR || t === STAIRS || t === SHRINE;
+    return t === FLOOR || t === STAIRS || t === SHRINE || t === WATER;
   }
+
+  getObj(x, y) { return this.inBounds(x, y) ? this.objs[this.idx(x, y)] : null; }
+  clearObj(x, y) { if (this.inBounds(x, y)) this.objs[this.idx(x, y)] = null; }
   blocksSight(x, y) {
     const t = this.get(x, y);
     return t === WALL || t === LOCKED;
@@ -74,6 +89,10 @@ export class Dungeon {
     else if (strategy === "bsp") this.genBSP();
     else this.genRooms();
     this.finalize();
+    if (strategy === "caves") this._placeWater();
+    this.scatterDecor();
+    this._placeInteractables();
+    this._placeTraps();
   }
 
   // --- Strategy: random non-overlapping rooms joined by L-corridors. ---
@@ -249,8 +268,6 @@ export class Dungeon {
       for (let x = 0; x < this.w; x++)
         if (this.tiles[this.idx(x, y)] === FLOOR && dist[this.idx(x, y)] >= 0)
           this.floors.push({ x, y });
-
-    this.scatterDecor();
   }
 
   _bfsFrom(sx, sy) {
@@ -347,8 +364,50 @@ export class Dungeon {
         if (r < 0.04) this.decor[this.idx(x, y)] = "crack";
         else if (r < 0.06) this.decor[this.idx(x, y)] = "rubble";
         else if (r < 0.10) this.decor[this.idx(x, y)] = "floorAlt";
+        else if (r < 0.12) {
+          this.decor[this.idx(x, y)] = "torch";
+          this.lights.push({ x, y, radius: 3.5 });
+        }
       }
     }
+  }
+
+  // Convert ~8% of floor cells to water in cave maps; rebuild floors list.
+  _placeWater() {
+    const toWater = [];
+    for (const c of this.floors) {
+      if (rng() < 0.08) toWater.push(c);
+    }
+    for (const c of toWater) this.set(c.x, c.y, WATER);
+    this.floors = this.floors.filter((c) => this.get(c.x, c.y) === FLOOR);
+  }
+
+  // Scatter chests and barrels across reachable floor cells.
+  _placeInteractables() {
+    if (!this.floors.length) return;
+    const start = this.startPos;
+    const cells = shuffle(
+      this.floors.filter((c) => !(c.x === start.x && c.y === start.y))
+    );
+    let i = 0;
+    const chestN = Math.max(1, Math.floor(cells.length * 0.03) + rnd(3));
+    for (let n = 0; n < chestN && i < cells.length; n++, i++)
+      this.objs[this.idx(cells[i].x, cells[i].y)] = { type: "chest" };
+    const barrelN = Math.max(2, Math.floor(cells.length * 0.04) + rnd(4));
+    for (let n = 0; n < barrelN && i < cells.length; n++, i++)
+      this.objs[this.idx(cells[i].x, cells[i].y)] = { type: "barrel" };
+  }
+
+  // Scatter hidden spike traps on floor cells (revealed when stepped on).
+  _placeTraps() {
+    if (!this.floors.length) return;
+    const start = this.startPos;
+    const candidates = this.floors.filter(
+      (c) => !(c.x === start.x && c.y === start.y) && !this.objs[this.idx(c.x, c.y)]
+    );
+    const n = Math.max(1, Math.floor(candidates.length * 0.03) + rnd(3));
+    const picked = shuffle(candidates.slice()).slice(0, n);
+    for (const c of picked) this.traps.add(this.idx(c.x, c.y));
   }
 
   // All floor cells of a room, useful for spawning.

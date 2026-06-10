@@ -94,6 +94,12 @@ async function boot() {
       const chosenSeed = parseSeed(seedInput.value.trim());
       classPanel.classList.remove("hidden");
 
+      // Restore original text before annotating (prevents duplication on repeat shows).
+      classPanel.querySelectorAll(".cls-perk, .cls-kit").forEach((el) => {
+        if (!el.dataset.orig) el.dataset.orig = el.textContent;
+        else el.textContent = el.dataset.orig;
+      });
+
       // Annotate unlocked perks.
       const u = getUnlocks();
       const annot = (sel, txt) => {

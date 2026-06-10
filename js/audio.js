@@ -124,40 +124,47 @@ class AudioManager {
     g.gain.value = 0;
     g.connect(this.musicGain);
 
+    const el = new Audio("assets/dark_dungeon_ambience.mp3");
+    el.loop = true;
+    const src = this.ctx.createMediaElementSource(el);
+    src.connect(g);
+    el.play().catch(() => {});
+    g.gain.linearRampToValueAtTime(0.8, t + 2.5);
+    this.ambient = { el, src, g };
+
+    /* Procedural drone — disabled in favour of the mp3 track above.
     const filt = this.ctx.createBiquadFilter();
     filt.type = "lowpass";
     filt.frequency.value = 380;
     filt.Q.value = 2;
     filt.connect(g);
-
     const o1 = this.ctx.createOscillator();
     o1.type = "sawtooth";
     o1.frequency.value = 55;
     const o2 = this.ctx.createOscillator();
     o2.type = "sawtooth";
-    o2.frequency.value = 55.4; // slight detune for movement
+    o2.frequency.value = 55.4;
     o1.connect(filt);
     o2.connect(filt);
-
-    // Slow filter sweep so the drone breathes.
     const lfo = this.ctx.createOscillator();
     lfo.frequency.value = 0.06;
     const lfoGain = this.ctx.createGain();
     lfoGain.gain.value = 140;
     lfo.connect(lfoGain);
     lfoGain.connect(filt.frequency);
-
     o1.start(t); o2.start(t); lfo.start(t);
-    g.gain.linearRampToValueAtTime(0.5, t + 2.5); // gentle fade-in
+    g.gain.linearRampToValueAtTime(0.5, t + 2.5);
     this.ambient = { o1, o2, lfo, g };
+    */
   }
 
   stopAmbient() {
     if (!this.ambient) return;
-    const { o1, o2, lfo, g } = this.ambient;
+    const { el, o1, o2, lfo, g } = this.ambient;
     const t = this.ctx.currentTime;
     g.gain.linearRampToValueAtTime(0, t + 0.5);
-    [o1, o2, lfo].forEach((o) => { try { o.stop(t + 0.6); } catch { /* already stopped */ } });
+    if (el) setTimeout(() => { try { el.pause(); } catch {} }, 600);
+    if (o1) [o1, o2, lfo].forEach((o) => { try { o.stop(t + 0.6); } catch {} });
     this.ambient = null;
   }
 }

@@ -294,22 +294,33 @@ milestone are roughly ordered; most are independently shippable.
   milestones (depth 5 / 50 kills / 1 win / 10 runs) buff classes; active upgrades
   annotated in the class-select panel.
 
-### M7 — World & content
+### M7 — World & content ✅ DONE
 **Goal:** a living dungeon and surrounding world.
 
-- [ ] **M7-T1 — NPCs & shops.** Merchant/healer on safe floors using City/Interior art.
-  - Files: `js/assets.js` (load + map those sheets), new `js/npc.js`, `js/game.js`
-    (interaction + buy UI).
-  - Done when: a shop floor lets you spend gold for items/healing.
-- [ ] **M7-T2 — Interactables.** Destructible barrels, openable chests, levers.
-  - Files: `js/dungeon.js` (object layer), `js/game.js` (`turn` interaction).
-  - Done when: chests give loot and barrels break.
-- [ ] **M7-T3 — Hazards.** Traps, lava/water, spikes with damage/movement rules.
-  - Files: `js/dungeon.js` (tile flags), `js/game.js` (`isWalkable`/on-enter effects).
-  - Done when: stepping on a hazard applies its effect.
-- [ ] **M7-T4 — Dynamic lighting.** Torch light radii blended with FOV for atmosphere.
-  - Files: `js/dungeon.js` (light sources), `js/game.js` `render()` (lightmap pass).
-  - Done when: torches cast visible light pools integrated with FOV dimming.
+> Background music swapped to `assets/dark_dungeon_ambience.mp3` (mp3 via
+> `createMediaElementSource`). Procedural drone kept but commented out in `audio.js`.
+
+- [x] **M7-T1 — NPCs & shops.** Merchant (every 3rd floor) and healer (every 4th floor)
+  spawn on non-boss floors. Bump into them to open a shop overlay. Merchants sell 3
+  randomly generated items; healers restore HP for gold.
+  - Files: new `js/npc.js` (NPC types, `makeNpc`, `genWares`), `js/game.js`
+    (`nextLevel` NPC spawn, `openShop`, `npcAt`, `_itemPrice`, `drawNpcIndicator`),
+    `index.html` (`#shop-panel`), `css/style.css` (shop styles).
+- [x] **M7-T2 — Interactables.** Chests (procedural loot) and barrels (occasional gold)
+  scatter across every floor. Walking onto them triggers the effect; chests play the
+  levelUp fanfare; barrels smash with hit + particles.
+  - Files: `js/dungeon.js` (`objs[]`, `_placeInteractables`, `getObj/clearObj`),
+    `js/game.js` (`turn` obj check, `useObject`, `drawChest`, `drawBarrel`).
+- [x] **M7-T3 — Hazards.** Hidden spike traps (2–5 damage, removed on trigger) and
+  water tiles (1 cold damage per step) on cave maps. Traps stored in `dungeon.traps`
+  Set; water is `WATER = 5` tile type with ripple overlay.
+  - Files: `js/dungeon.js` (`WATER`, `_placeTraps`, `_placeWater`, `isWalkable`),
+    `js/game.js` (water/trap handling in `turn`, `drawWaterOverlay`).
+- [x] **M7-T4 — Dynamic lighting.** Torches (≈2% of floor tiles) stored in
+  `dungeon.lights[]`. Each torch emits a warm radial gradient in `lighter` composite
+  mode, pulsing on visible tiles and faintly glowing on explored-but-unseen tiles.
+  - Files: `js/dungeon.js` (`lights[]`, torch in `scatterDecor`),
+    `js/game.js` (torch glow pass in `render`, `drawTorch`).
 
 ---
 

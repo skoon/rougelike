@@ -1,8 +1,9 @@
 // Core game: state, turn loop, combat, rendering, input, HUD.
 
 import { drawSprite, SPR, TILE } from "./assets.js";
-import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE } from "./dungeon.js";
+import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER } from "./dungeon.js";
 import { populate, makeMonster, makeBoss, makeItem, CLASSES } from "./entities.js";
+import { makeNpc, genWares } from "./npc.js";
 import { findPath } from "./pathfind.js";
 import { audio } from "./audio.js";
 import { saveRun, getBest, updateMeta, getUnlocks } from "./scores.js";
@@ -107,6 +108,7 @@ export class Game {
     this.transition = null;
     this.busyUntil = 0;
     this.over = false;
+    this.shopOpen = false;
     // start() runs from a user gesture (button click / R key), so it is a
     // valid place to unlock audio and begin the ambient bed.
     audio.init();
@@ -129,8 +131,26 @@ export class Game {
     this.monsters = monsters;
     this.items = items;
 
-    // Boss floor every 5 depths: spawn a unique guardian near the stairs.
+    // NPCs: merchant every 3 floors, healer every 4 floors (skipped on boss floors).
     this.isBossFloor = this.depth % 5 === 0;
+    this.npcs = [];
+    if (!this.isBossFloor) {
+      if (this.depth % 3 === 0) {
+        const spot = this.findFloorNear(this.dungeon.startPos, 5) || this.dungeon.startPos;
+        const npc = makeNpc("merchant", spot.x, spot.y);
+        npc.wareItems = genWares().map((key) => makeItem(key, 0, 0, this.depth));
+        this.npcs.push(npc);
+        this.log("You spot a merchant's lantern nearby.", "gold");
+      }
+      if (this.depth % 4 === 0) {
+        const spot = this.findFloorNear(this.dungeon.stairs, 6) || this.dungeon.startPos;
+        const npc = makeNpc("healer", spot.x, spot.y);
+        this.npcs.push(npc);
+        this.log("A healer awaits somewhere on this floor.", "good");
+      }
+    }
+
+    // Boss floor every 5 depths: spawn a unique guardian near the stairs.
     if (this.isBossFloor) {
       const spot = this.findFloorNear(this.dungeon.stairs, 5) || this.dungeon.stairs;
       this.monsters.push(makeBoss(spot.x, spot.y, this.depth));
@@ -201,7 +221,7 @@ export class Game {
     window.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
       if (k === "r") { e.preventDefault(); this.start(); return; }
-      if (this.over) return;
+      if (this.over || this.shopOpen) return;
       if (k === "i") { e.preventDefault(); this.toggleInventory(); return; }
       if (performance.now() < this.busyUntil) return;
 
@@ -230,7 +250,7 @@ export class Game {
   // Click / tap a tile to step (or attack) one square toward it.
   bindPointer() {
     this.canvas.addEventListener("pointerdown", (e) => {
-      if (this.over || performance.now() < this.busyUntil) return;
+      if (this.over || this.shopOpen || performance.now() < this.busyUntil) return;
       e.preventDefault();
       const rect = this.canvas.getBoundingClientRect();
       const cx = (e.clientX - rect.left) * (this.canvas.width / rect.width);
@@ -259,6 +279,9 @@ export class Game {
       const target = this.monsterAt(nx, ny);
       if (target) {
         this.attack(p, target);
+      } else if (this.npcAt(nx, ny)) {
+        this.openShop(this.npcAt(nx, ny));
+        return; // no turn spent — shop UI takes over
       } else if (this.dungeon.get(nx, ny) === LOCKED) {
         if (p.keys > 0) {
           p.keys--;
@@ -274,10 +297,31 @@ export class Game {
       } else if (this.dungeon.isWalkable(nx, ny)) {
         p.x = nx; p.y = ny;
         audio.move();
+        // Water hazard: cold damage on each step.
+        if (this.dungeon.get(p.x, p.y) === WATER) {
+          this.log("Cold water bites at your feet.", "dim");
+          this.damageActor(p, 1, "#5ab4e8");
+          if (this.over) return;
+        }
+        // Spike trap: hidden until sprung.
+        const ti = this.dungeon.idx(p.x, p.y);
+        if (this.dungeon.traps.has(ti)) {
+          this.dungeon.traps.delete(ti);
+          const dmg = 2 + Math.floor(rng() * 4);
+          this.log(`Click — a spike trap! You take ${dmg} damage.`, "bad");
+          audio.hurt();
+          this.addShake(4, 150);
+          this.damageActor(p, dmg);
+          if (this.over) return;
+        }
       } else {
         return; // bumped a wall: no turn spent
       }
     }
+
+    // Interactable objects: chests and barrels trigger on walk-over.
+    const oi = this.dungeon.idx(p.x, p.y);
+    if (this.dungeon.objs[oi]) this.useObject(p.x, p.y, this.dungeon.objs[oi]);
 
     if (this.pickupAt(p.x, p.y)) return;
 
@@ -772,6 +816,7 @@ export class Game {
     const t = 0.35;
     this.tweenActor(this.player, t);
     for (const m of this.monsters) this.tweenActor(m, t);
+    if (this.npcs) for (const n of this.npcs) this.tweenActor(n, t);
     if (this.effects.length)
       this.effects = this.effects.filter((e) => now - e.start < e.dur);
     if (this.particles.length) this.updateParticles(dt);
@@ -865,8 +910,12 @@ export class Game {
           this.drawLock(sx, sy);
         } else {
           drawSprite(ctx, theme.floor, sx, sy, CELL);
+          if (tile === WATER) this.drawWaterOverlay(sx, sy);
           const dec = d.decor[i];
-          if (dec) drawSprite(ctx, SPR[dec], sx, sy, CELL);
+          if (dec) {
+            if (dec === "torch") this.drawTorch(sx, sy);
+            else drawSprite(ctx, SPR[dec], sx, sy, CELL);
+          }
           if (tile === STAIRS) drawSprite(ctx, theme.stairs, sx, sy, CELL);
           if (tile === SHRINE) this.drawShrine(sx, sy);
         }
@@ -885,6 +934,40 @@ export class Game {
       const sx = Math.round((st.x - camX) * CELL);
       const sy = Math.round((st.y - camY) * CELL);
       this.drawStairsMarker(sx, sy, d.visible[d.idx(st.x, st.y)]);
+    }
+
+    // --- dynamic torch lighting ---
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (const lt of d.lights) {
+      const ei = d.idx(lt.x, lt.y);
+      if (!d.explored[ei]) continue;
+      const lsx = Math.round((lt.x - camX + 0.5) * CELL);
+      const lsy = Math.round((lt.y - camY + 0.5) * CELL);
+      const pulse = 0.5 + 0.5 * Math.sin(this.now / 250 + lt.x * 1.7 + lt.y * 2.3);
+      const alpha = d.visible[ei] ? (0.11 + 0.05 * pulse) : 0.05;
+      const rad = lt.radius * CELL;
+      const grd = ctx.createRadialGradient(lsx, lsy, 0, lsx, lsy, rad);
+      grd.addColorStop(0, `rgba(255,170,50,${alpha})`);
+      grd.addColorStop(1, "rgba(255,170,50,0)");
+      ctx.fillStyle = grd;
+      ctx.fillRect(lsx - rad, lsy - rad, rad * 2, rad * 2);
+    }
+    ctx.restore();
+
+    // --- interactable objects: chests and barrels ---
+    for (let vy = -1; vy <= VIEW_H; vy++) {
+      for (let vx = -1; vx <= VIEW_W; vx++) {
+        const mx = x0 + vx, my = y0 + vy;
+        if (!d.inBounds(mx, my)) continue;
+        const i = d.idx(mx, my);
+        if (!d.objs[i] || !d.visible[i]) continue;
+        const sx = Math.round((mx - camX) * CELL);
+        const sy = Math.round((my - camY) * CELL);
+        const obj = d.objs[i];
+        if (obj.type === "chest") this.drawChest(sx, sy);
+        else if (obj.type === "barrel") this.drawBarrel(sx, sy);
+      }
     }
 
     // --- items (only when visible) ---
@@ -921,6 +1004,19 @@ export class Game {
       const sy = Math.round((m.ry - camY) * CELL);
       this.drawActor(m, sx, sy);
       this.drawHealthBar(ctx, sx, sy, m.hp / m.maxHp);
+    }
+
+    // --- NPCs ---
+    if (this.npcs) {
+      for (const npc of this.npcs) {
+        if (!npc.alive) continue;
+        const i = d.idx(npc.x, npc.y);
+        if (!d.visible[i]) continue;
+        const sx = Math.round((npc.rx - camX) * CELL);
+        const sy = Math.round((npc.ry - camY) * CELL);
+        this.drawActor(npc, sx, sy);
+        this.drawNpcIndicator(sx, sy, npc);
+      }
     }
 
     // --- player ---
@@ -998,6 +1094,7 @@ export class Game {
         else if (t === STAIRS) col = "#e0a040";
         else if (t === LOCKED) col = "#b06a2e";
         else if (t === SHRINE) col = "#7fe6ff";
+        else if (t === WATER) col = "#1a3d80";
         else col = "#69697e";
         mm.globalAlpha = d.visible[i] ? 1 : 0.5;
         mm.fillStyle = col;
@@ -1265,7 +1362,7 @@ export class Game {
       this.now < a.flashUntil ? (a.flashUntil - this.now) / 130 * 0.85 : 0;
     // Poison shows as a pulsing green wash; otherwise use any elite tint.
     let tintColor = a.tint;
-    let tintStr = a.tint ? 0.4 : 0;
+    let tintStr = a.tint ? (a.tintStrength || 0.4) : 0;
     if (this.hasStatus(a, "poison")) {
       tintColor = "#5fbf3a";
       tintStr = 0.3 + 0.15 * (0.5 + 0.5 * Math.sin(this.now / 200));
@@ -1293,6 +1390,244 @@ export class Game {
     ctx.fillRect(x - 1, y - 1, w + 2, 5);
     ctx.fillStyle = "#c44";
     ctx.fillRect(x, y, Math.max(0, w * pct), 3);
+  }
+
+  // --------------------------------------------------------- NPC & shop
+  npcAt(x, y) {
+    if (!this.npcs) return null;
+    return this.npcs.find((n) => n.alive && n.x === x && n.y === y) || null;
+  }
+
+  openShop(npc) {
+    const panel = document.getElementById("shop-panel");
+    if (!panel) return;
+    this.shopOpen = true;
+    document.getElementById("shop-title").textContent = npc.name;
+    document.getElementById("shop-greeting").textContent = npc.greeting;
+    const itemsEl = document.getElementById("shop-items");
+    itemsEl.innerHTML = "";
+    const p = this.player;
+
+    if (npc.npcType === "healer") {
+      const healCost = 15 + this.depth * 2;
+      const missing = p.maxHp - p.hp;
+      const row = document.createElement("div");
+      row.className = "shop-row";
+      const nameEl = document.createElement("span");
+      nameEl.className = "shop-name";
+      nameEl.textContent = missing > 0 ? `Restore ${missing} HP` : "You are at full health.";
+      const priceEl = document.createElement("span");
+      priceEl.className = "shop-price";
+      priceEl.textContent = `${healCost}g`;
+      const btn = document.createElement("button");
+      btn.className = "shop-buy";
+      btn.textContent = "Heal";
+      btn.disabled = p.gold < healCost || missing === 0;
+      btn.onclick = () => {
+        if (p.gold < healCost || p.hp >= p.maxHp) return;
+        p.gold -= healCost;
+        p.hp = p.maxHp;
+        this.log(`The healer restores your health. (−${healCost}g)`, "good");
+        audio.potion();
+        this.updateHud();
+        this.openShop(npc);
+      };
+      row.appendChild(nameEl);
+      row.appendChild(priceEl);
+      row.appendChild(btn);
+      itemsEl.appendChild(row);
+    } else if (npc.npcType === "merchant") {
+      const wares = npc.wareItems || [];
+      if (!wares.length) {
+        itemsEl.innerHTML = '<div class="shop-empty">I\'m all out of stock.</div>';
+      } else {
+        wares.forEach((it, idx) => {
+          const price = this._itemPrice(it);
+          const row = document.createElement("div");
+          row.className = "shop-row";
+          const nameEl = document.createElement("span");
+          nameEl.className = "shop-name";
+          let desc = it.name;
+          if (it.category === "equip")
+            desc += ` (+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"})`;
+          nameEl.textContent = desc;
+          const priceEl = document.createElement("span");
+          priceEl.className = "shop-price";
+          priceEl.textContent = `${price}g`;
+          const btn = document.createElement("button");
+          btn.className = "shop-buy";
+          btn.textContent = "Buy";
+          btn.disabled = p.gold < price;
+          btn.onclick = () => {
+            if (p.gold < price) return;
+            p.gold -= price;
+            npc.wareItems.splice(idx, 1);
+            switch (it.category) {
+              case "gold": p.gold += it.amount; break;
+              case "key": p.keys++; break;
+              case "consumable": p.inventory.push(it); break;
+              case "equip": p.inventory.push(it); this.tryAutoEquip(it); break;
+            }
+            this.log(`You buy a ${it.name}. (−${price}g)`, "gold");
+            audio.pickup();
+            this.updateHud();
+            this.openShop(npc);
+          };
+          row.appendChild(nameEl);
+          row.appendChild(priceEl);
+          row.appendChild(btn);
+          itemsEl.appendChild(row);
+        });
+      }
+    }
+
+    document.getElementById("shop-close").onclick = () => {
+      panel.classList.add("hidden");
+      this.shopOpen = false;
+      this.enemyTurn();
+      if (this.player.alive) this.tickStatuses(this.player);
+      this.dungeon.computeFov(this.player.x, this.player.y, FOV_RADIUS);
+      this.startTween();
+      this.updateHud();
+    };
+    panel.classList.remove("hidden");
+  }
+
+  _itemPrice(it) {
+    const base = { potion: 25, weapon: 40, armor: 35, shield: 30, key: 20 };
+    return (base[it.key] || 25) + (it.bonus || 0) * 3;
+  }
+
+  useObject(x, y, obj) {
+    this.dungeon.clearObj(x, y);
+    const p = this.player;
+    if (obj.type === "chest") {
+      if (rng() < 0.15) {
+        this.log("The chest is empty.", "dim");
+        audio.pickup();
+      } else {
+        const kinds = ["gold", "potion", "weapon", "armor", "shield"];
+        const it = makeItem(kinds[Math.floor(rng() * kinds.length)], x, y, this.depth);
+        this.log(`You open a chest! Found a ${it.name}.`, "gold");
+        audio.levelUp();
+        this.spawnParticles(x, y, "#ffcf6b", 10, true);
+        switch (it.category) {
+          case "gold": p.gold += it.amount; break;
+          case "key": p.keys++; break;
+          case "consumable": p.inventory.push(it); break;
+          case "equip": p.inventory.push(it); this.tryAutoEquip(it); break;
+        }
+        this.updateHud();
+      }
+    } else if (obj.type === "barrel") {
+      this.log("You smash the barrel.", "dim");
+      audio.hit();
+      this.spawnParticles(x, y, "#8b5c2a", 6);
+      if (rng() < 0.4) {
+        const gold = 3 + Math.floor(rng() * (5 + this.depth));
+        p.gold += gold;
+        this.log(`It had ${gold} gold inside!`, "gold");
+        this.updateHud();
+      }
+    }
+  }
+
+  // ------------------------------------------------ procedural draw helpers
+  drawWaterOverlay(sx, sy) {
+    const ctx = this.ctx;
+    const ripple = 0.5 + 0.5 * Math.sin(this.now / 700 + sx * 0.08 + sy * 0.06);
+    ctx.save();
+    ctx.globalAlpha = 0.50 + 0.08 * ripple;
+    ctx.fillStyle = "#0d2e5a";
+    ctx.fillRect(sx, sy, CELL, CELL);
+    ctx.globalAlpha = 0.12 * ripple;
+    ctx.fillStyle = "#6ab8e8";
+    ctx.fillRect(sx + 3, sy + Math.round(CELL * 0.35), CELL - 6, 3);
+    ctx.fillRect(sx + 6, sy + Math.round(CELL * 0.6), CELL - 12, 2);
+    ctx.restore();
+  }
+
+  drawTorch(sx, sy) {
+    const ctx = this.ctx;
+    const pulse = 0.5 + 0.5 * Math.sin(this.now / 180 + sx * 0.3 + sy * 0.4);
+    const cx = sx + CELL * 0.5;
+    const cy = sy + CELL * 0.6;
+    ctx.save();
+    ctx.strokeStyle = "#5c3310";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + 6);
+    ctx.lineTo(cx, cy - 2);
+    ctx.stroke();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.55 + 0.3 * pulse;
+    ctx.fillStyle = "#ff8c18";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 4 - pulse * 1.5, 3.5, 5 + pulse, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.5 * pulse;
+    ctx.fillStyle = "#ffe860";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 5 - pulse, 1.8, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  drawChest(sx, sy) {
+    const ctx = this.ctx;
+    const bob = Math.sin(this.now / 350) * 1.2;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + bob;
+    ctx.save();
+    ctx.fillStyle = "#7a4b1e";
+    ctx.strokeStyle = "#3a2208";
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(cx - 7, cy - 1, 14, 9);
+    ctx.strokeRect(cx - 7, cy - 1, 14, 9);
+    ctx.fillStyle = "#9a6030";
+    ctx.fillRect(cx - 7, cy - 5, 14, 4);
+    ctx.strokeRect(cx - 7, cy - 5, 14, 4);
+    ctx.fillStyle = "#f4c542";
+    ctx.strokeStyle = "#b8860b";
+    ctx.lineWidth = 1;
+    ctx.fillRect(cx - 2, cy - 2, 4, 5);
+    ctx.strokeRect(cx - 2, cy - 2, 4, 5);
+    ctx.restore();
+  }
+
+  drawBarrel(sx, sy) {
+    const ctx = this.ctx;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + 2;
+    ctx.save();
+    ctx.fillStyle = "#7a4b1e";
+    ctx.strokeStyle = "#3a2208";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 7, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = "#4a2a0e";
+    ctx.lineWidth = 1.5;
+    for (const oy of [-4, 4]) {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + oy, 7.5, 2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  drawNpcIndicator(sx, sy, npc) {
+    const ctx = this.ctx;
+    const bob = Math.sin(this.now / 380) * 1.5;
+    const pulse = 0.65 + 0.35 * Math.sin(this.now / 380);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.font = "bold 9px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = npc.npcType === "healer" ? "#88ccff" : "#ffd060";
+    ctx.fillText(npc.indicator, sx + CELL / 2, sy - 3 + bob);
+    ctx.restore();
   }
 }
 
