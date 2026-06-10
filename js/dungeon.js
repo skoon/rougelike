@@ -1,12 +1,14 @@
 // Procedural dungeon generation (rooms + corridors) and field of view.
 
+import { rng } from "./rng.js";
+
 export const WALL = 0;
 export const FLOOR = 1;
 export const STAIRS = 2;
 export const LOCKED = 3; // locked door: blocks movement + sight until a key opens it
 export const SHRINE = 4; // steppable tile granting a one-time blessing
 
-const rnd = (n) => Math.floor(Math.random() * n);
+const rnd = (n) => Math.floor(rng() * n);
 const rint = (min, max) => min + rnd(max - min + 1);
 
 class Room {
@@ -131,7 +133,7 @@ export class Dungeon {
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
 
-    if (Math.random() < 0.7) {
+    if (rng() < 0.7) {
       const room = pool.pop();
       this.vaultCells = this.roomCells(room);
       // Lock every floor cell bordering the vault so the only way in is keyed.
@@ -145,11 +147,11 @@ export class Dungeon {
       this.hasVault = true;
     }
 
-    if (pool.length && Math.random() < 0.6) {
+    if (pool.length && rng() < 0.6) {
       this.nestCells = this.roomCells(pool.pop());
     }
 
-    if (pool.length && Math.random() < 0.6) {
+    if (pool.length && rng() < 0.6) {
       const room = pool.pop();
       this.shrinePos = { x: room.cx, y: room.cy };
       this.set(room.cx, room.cy, SHRINE);
@@ -162,7 +164,7 @@ export class Dungeon {
       leaves.push(node);
       return;
     }
-    const horiz = node.w / node.h < 1.25 && (node.h / node.w >= 1.25 || Math.random() < 0.5);
+    const horiz = node.w / node.h < 1.25 && (node.h / node.w >= 1.25 || rng() < 0.5);
     if (horiz) {
       if (node.h - MIN <= MIN) { leaves.push(node); return; }
       const cut = rint(MIN, node.h - MIN);
@@ -182,7 +184,7 @@ export class Dungeon {
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const edge = x < 1 || y < 1 || x >= W - 1 || y >= H - 1;
-        this.set(x, y, edge || Math.random() < 0.45 ? WALL : FLOOR);
+        this.set(x, y, edge || rng() < 0.45 ? WALL : FLOOR);
       }
     }
     for (let it = 0; it < 5; it++) {
@@ -320,7 +322,7 @@ export class Dungeon {
   }
 
   carveCorridor(x1, y1, x2, y2) {
-    if (Math.random() < 0.5) {
+    if (rng() < 0.5) {
       this.carveH(x1, x2, y1);
       this.carveV(y1, y2, x2);
     } else {
@@ -341,7 +343,7 @@ export class Dungeon {
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
         if (this.get(x, y) !== FLOOR) continue;
-        const r = Math.random();
+        const r = rng();
         if (r < 0.04) this.decor[this.idx(x, y)] = "crack";
         else if (r < 0.06) this.decor[this.idx(x, y)] = "rubble";
         else if (r < 0.10) this.decor[this.idx(x, y)] = "floorAlt";

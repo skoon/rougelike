@@ -1,6 +1,7 @@
 // Actor and item templates plus per-depth spawning.
 
 import { FLOOR } from "./dungeon.js";
+import { rng } from "./rng.js";
 
 // Monster templates. `minDepth` gates when they start appearing; `weight`
 // shapes how common they are. `layers` are [col,row] tiles on the Characters
@@ -28,7 +29,7 @@ export function makeMonster(key, x, y, depth) {
     x, y,
     rx: x, ry: y, // render position (for tweening)
     facing: 1,
-    bobPhase: Math.random() * Math.PI * 2,
+    bobPhase: rng() * Math.PI * 2,
     flashUntil: 0,
     hp: t.hp + bonus * 2,
     maxHp: t.hp + bonus * 2,
@@ -71,6 +72,28 @@ export function makeBoss(x, y, depth) {
   return m;
 }
 
+// Playable class definitions. Starting stats + kit + perk description.
+export const CLASSES = {
+  warrior: {
+    name: "Warrior",
+    hp: 40, atk: 6, def: 2,
+    kit: "Starts with chainmail armor.",
+    perk: "Toughness: take 1 less damage from every hit.",
+  },
+  rogue: {
+    name: "Rogue",
+    hp: 25, atk: 8, def: 0,
+    kit: "Starts with a short sword.",
+    perk: "Backstab: 30% chance to deal double damage.",
+  },
+  mage: {
+    name: "Mage",
+    hp: 22, atk: 4, def: 0,
+    kit: "Starts with 3 healing potions.",
+    perk: "Arcane: healing potions restore full HP.",
+  },
+};
+
 // Equipment tiers by slot: [name, bonus], deeper floors roll higher tiers.
 export const GEAR = {
   weapon: [["rusty dagger", 2], ["short sword", 4], ["war axe", 6], ["runed blade", 9]],
@@ -84,7 +107,7 @@ export function makeItem(key, x, y, depth) {
   const base = { kind: "item", key, x, y };
   if (key === "gold") {
     base.category = "gold"; base.sprite = "gold"; base.name = "gold";
-    base.amount = 5 + Math.floor(Math.random() * (8 + depth * 2));
+    base.amount = 5 + Math.floor(rng() * (8 + depth * 2));
   } else if (key === "amulet") {
     base.category = "gold"; base.sprite = "amulet"; base.name = "glittering amulet";
     base.amount = 25 + depth * 5;
@@ -93,11 +116,13 @@ export function makeItem(key, x, y, depth) {
   } else if (key === "potion") {
     base.category = "consumable"; base.sprite = "potion"; base.name = "healing potion";
     base.heal = 12;
+  } else if (key === "artifact") {
+    base.category = "artifact"; base.name = "the Forgotten Relic";
   } else {
     // weapon / armor / shield
     const tiers = GEAR[key];
     const ti = Math.max(0, Math.min(tiers.length - 1,
-      Math.floor((depth - 1) / 2) + (Math.random() < 0.3 ? 1 : 0)));
+      Math.floor((depth - 1) / 2) + (rng() < 0.3 ? 1 : 0)));
     base.category = "equip"; base.slot = key; base.sprite = key;
     base.name = tiers[ti][0];
     base.bonus = tiers[ti][1];
@@ -108,7 +133,7 @@ export function makeItem(key, x, y, depth) {
 function weightedPick(keys, depth) {
   const pool = keys.filter((k) => MONSTERS[k].minDepth <= depth);
   const total = pool.reduce((s, k) => s + MONSTERS[k].weight, 0);
-  let roll = Math.random() * total;
+  let roll = rng() * total;
   for (const k of pool) {
     roll -= MONSTERS[k].weight;
     if (roll <= 0) return k;
@@ -118,14 +143,14 @@ function weightedPick(keys, depth) {
 
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
 
 function randomLootKind() {
-  const r = Math.random();
+  const r = rng();
   if (r < 0.34) return "gold";
   if (r < 0.60) return "potion";
   if (r < 0.72) return "weapon";
@@ -158,16 +183,16 @@ export function populate(dungeon, depth) {
 
   const monsterCount = Math.min(
     cand.length,
-    5 + depth * 2 + Math.floor(area / 130) + Math.floor(Math.random() * 4)
+    5 + depth * 2 + Math.floor(area / 130) + Math.floor(rng() * 4)
   );
   for (let n = 0; n < monsterCount && ci < cand.length; n++) {
     const c = cand[ci++];
     const m = makeMonster(weightedPick(monsterKeys, depth), c.x, c.y, depth);
-    if (depth >= 3 && Math.random() < 0.08 + depth * 0.01) makeElite(m);
+    if (depth >= 3 && rng() < 0.08 + depth * 0.01) makeElite(m);
     monsters.push(m);
   }
 
-  const itemCount = Math.min(cand.length - ci, 4 + Math.floor(Math.random() * 4));
+  const itemCount = Math.min(cand.length - ci, 4 + Math.floor(rng() * 4));
   for (let n = 0; n < itemCount && ci < cand.length; n++) {
     const c = cand[ci++];
     items.push(makeItem(randomLootKind(), c.x, c.y, depth));
@@ -178,7 +203,7 @@ export function populate(dungeon, depth) {
     if (ci < cand.length) items.push(makeItem("key", cand[ci].x, cand[ci++].y, depth));
     const vcells = shuffle(dungeon.vaultCells.slice());
     const lootKinds = ["amulet", "weapon", "armor", "shield", "potion"];
-    const lootN = Math.min(vcells.length, 3 + Math.floor(Math.random() * 2));
+    const lootN = Math.min(vcells.length, 3 + Math.floor(rng() * 2));
     for (let n = 0; n < lootN; n++) {
       items.push(makeItem(lootKinds[n % lootKinds.length], vcells[n].x, vcells[n].y, depth));
     }
@@ -192,13 +217,13 @@ export function populate(dungeon, depth) {
   // --- Monster nest: a dense cluster, with a small reward. ---
   if (dungeon.nestCells.length) {
     const ncells = shuffle(dungeon.nestCells.slice());
-    const nN = Math.min(ncells.length - 1, 4 + Math.floor(depth / 2) + Math.floor(Math.random() * 3));
+    const nN = Math.min(ncells.length - 1, 4 + Math.floor(depth / 2) + Math.floor(rng() * 3));
     for (let n = 0; n < nN; n++) {
       monsters.push(makeMonster(weightedPick(monsterKeys, depth), ncells[n].x, ncells[n].y, depth));
     }
     if (ncells.length > nN) {
       const c = ncells[nN];
-      items.push(makeItem(Math.random() < 0.5 ? "gold" : "potion", c.x, c.y, depth));
+      items.push(makeItem(rng() < 0.5 ? "gold" : "potion", c.x, c.y, depth));
     }
   }
 

@@ -115,6 +115,74 @@ canvas#game {
   z-index: 2;
 }
 
+#stats .cls-warrior { color: #c08040; font-weight: bold; }
+#stats .cls-rogue   { color: #70c070; font-weight: bold; }
+#stats .cls-mage    { color: #8080e0; font-weight: bold; }
+
+#class-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(6, 5, 12, 0.88);
+  z-index: 10;
+  line-height: normal;
+}
+#class-panel.hidden { display: none; }
+
+#class-card {
+  text-align: center;
+  padding: 24px 28px;
+  background: var(--panel);
+  border: 2px solid var(--panel-edge);
+  border-radius: 8px;
+  max-width: 620px;
+  width: 95%;
+}
+#class-card h2 {
+  margin: 0 0 16px;
+  color: var(--accent);
+  font-size: 22px;
+}
+#class-choices {
+  display: flex;
+  gap: 12px;
+}
+.cls-opt {
+  flex: 1;
+  padding: 14px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.cls-opt h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--accent);
+}
+.cls-stats { font-size: 12px; color: var(--ink); }
+.cls-kit   { font-size: 12px; color: var(--muted); }
+.cls-perk  { font-size: 12px; color: #7dd65a; font-style: italic; flex: 1; }
+.cls-btn {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 14px;
+  cursor: pointer;
+  color: #111;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  margin-top: 4px;
+  align-self: flex-start;
+}
+.cls-btn:hover { filter: brightness(1.1); }
+
 #overlay {
   position: absolute;
   inset: 0;
@@ -144,6 +212,28 @@ canvas#game {
   color: var(--muted);
   line-height: 1.5;
 }
+
+#seed-row {
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+#seed-row input {
+  font: inherit;
+  font-size: 13px;
+  width: 130px;
+  padding: 4px 8px;
+  margin-left: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+}
+#seed-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+#seed-row.hidden { display: none; }
 
 #overlay-btn {
   font: inherit;

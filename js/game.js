@@ -2,9 +2,11 @@
 
 import { drawSprite, SPR, TILE } from "./assets.js";
 import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE } from "./dungeon.js";
-import { populate, makeMonster, makeBoss } from "./entities.js";
+import { populate, makeMonster, makeBoss, makeItem, CLASSES } from "./entities.js";
 import { findPath } from "./pathfind.js";
 import { audio } from "./audio.js";
+import { saveRun, getBest, updateMeta, getUnlocks } from "./scores.js";
+import { seedRng, rng } from "./rng.js";
 
 const MAP_W = 50;
 const MAP_H = 38;
@@ -14,6 +16,7 @@ const VIEW_W = 21; // tiles shown horizontally
 const VIEW_H = 15; // tiles shown vertically
 const FOV_RADIUS = 8;
 const MOVE_MS = 90; // tween duration
+const WIN_DEPTH = 10; // depth where the win artifact spawns
 
 // Depth themes: each picks a generation strategy and a tile palette
 // ([sheet, col, row]) for floor/wall/stairs. Deeper = later entries.
@@ -71,7 +74,10 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- lifecycle
-  start() {
+  start(seed, cls) {
+    this.seed = seed !== undefined ? seed >>> 0 : (Math.random() * 0x100000000 >>> 0);
+    this.seedDisplay = this.seed.toString(16).padStart(8, "0").toUpperCase();
+    this.cls = cls !== undefined ? cls : (this.cls || "warrior");
     this.depth = 0;
     this.player = {
       kind: "player",
@@ -92,7 +98,8 @@ export class Game {
       statuses: [],
       alive: true,
     };
-    this.recalcStats();
+    this.applyClass();  // overrides hp/atk/def and adds starting kit
+    this.runKills = 0;
     this.messages = [];
     this.effects = [];
     this.particles = [];
@@ -112,6 +119,7 @@ export class Game {
   nextLevel() {
     this.depth++;
     this.theme = themeForDepth(this.depth);
+    seedRng((this.seed ^ (this.depth * 2654435761)) >>> 0);
     this.dungeon = new Dungeon(MAP_W, MAP_H, this.theme.strategy);
     const spawn = this.dungeon.startPos;
     const p = this.player;
@@ -129,10 +137,50 @@ export class Game {
       this.log("A mighty presence guards this floor.", "bad");
     }
 
+    // Win artifact on the target depth.
+    if (this.depth === WIN_DEPTH) {
+      const spot = this.findFloorNear(this.dungeon.stairs, 8) || this.dungeon.startPos;
+      this.items.push(makeItem("artifact", spot.x, spot.y, this.depth));
+      this.log("An ancient power radiates from somewhere on this floor...", "gold");
+    }
+
     this.dungeon.computeFov(p.x, p.y, FOV_RADIUS);
     this.centerCamera(true);
     if (this.depth > 1) this.log(`You reach depth ${this.depth}.`, "dim");
     this.updateHud();
+  }
+
+  // Apply the chosen class's starting stats, kit, and any active meta unlocks.
+  applyClass() {
+    const p = this.player;
+    const c = CLASSES[this.cls] || CLASSES.warrior;
+    p.maxHp = c.hp; p.hp = c.hp;
+    p.baseAtk = c.atk; p.baseDef = c.def;
+
+    this.unlocks = getUnlocks();
+    const u = this.unlocks;
+
+    const equip = (slot, name, bonus) => ({
+      kind: "item", key: slot, category: "equip",
+      slot, sprite: slot, name, bonus, x: 0, y: 0,
+    });
+    const potion = () => ({ kind: "item", key: "potion", category: "consumable",
+      sprite: "potion", name: "healing potion", heal: 12, x: 0, y: 0 });
+
+    switch (this.cls) {
+      case "warrior":
+        p.equip.armor = equip("armor", "chainmail", 2);
+        if (u.hardened) { p.maxHp += 5; p.hp += 5; }
+        break;
+      case "rogue":
+        p.equip.weapon = equip("weapon", "short sword", 4);
+        break;
+      case "mage":
+        for (let i = 0; i < (u.archmage ? 4 : 3); i++) p.inventory.push(potion());
+        break;
+    }
+    if (u.veteran) p.inventory.push(potion()); // bonus potion for all classes
+    this.recalcStats();
   }
 
   // Find a free floor cell within `rad` of `pos` (for boss placement).
@@ -145,7 +193,7 @@ export class Game {
         if (this.dungeon.get(x, y) === FLOOR && !this.monsterAt(x, y)) opts.push({ x, y });
       }
     }
-    return opts.length ? opts[Math.floor(Math.random() * opts.length)] : null;
+    return opts.length ? opts[Math.floor(rng() * opts.length)] : null;
   }
 
   // ------------------------------------------------------------------- input
@@ -231,7 +279,7 @@ export class Game {
       }
     }
 
-    this.pickupAt(p.x, p.y);
+    if (this.pickupAt(p.x, p.y)) return;
 
     if (this.dungeon.get(p.x, p.y) === SHRINE) this.useShrine();
 
@@ -257,7 +305,7 @@ export class Game {
     this.dungeon.set(p.x, p.y, FLOOR);
     if (this.dungeon.shrinePos) this.dungeon.shrinePos = null;
     p.hp = p.maxHp;
-    const boon = Math.random();
+    const boon = rng();
     if (boon < 0.34) { p.maxHp += 5; p.hp = p.maxHp; this.log("The shrine blesses you — max HP up!", "gold"); }
     else if (boon < 0.67) { p.baseAtk += 1; this.log("The shrine blesses you — attack up!", "gold"); }
     else { p.baseDef += 1; this.log("The shrine blesses you — defense up!", "gold"); }
@@ -351,7 +399,7 @@ export class Game {
   // ---------------------------------------------------------------- combat
   rollDamage(attacker, defender) {
     const raw = attacker.atk - defender.def;
-    return Math.max(1, raw + (Math.floor(Math.random() * 3) - 1));
+    return Math.max(1, raw + (Math.floor(rng() * 3) - 1));
   }
 
   attack(attacker, defender) {
@@ -364,7 +412,12 @@ export class Game {
     attacker.lungeDy = ldy;
 
     if (attacker.kind === "player") audio.swing();
-    const dmg = this.rollDamage(attacker, defender);
+    let dmg = this.rollDamage(attacker, defender);
+    if (attacker.kind === "player" && this.cls === "rogue" &&
+        rng() < (this.unlocks?.shadowcraft ? 0.4 : 0.3)) {
+      dmg *= 2;
+      this.log("Backstab!", "good");
+    }
     if (attacker.kind === "player") {
       this.log(`You hit the ${defender.name} for ${dmg}.`, "good");
       audio.hit();
@@ -375,7 +428,7 @@ export class Game {
     this.damageActor(defender, dmg);
 
     // Slimes (and the like) can poison on a connecting hit.
-    if (attacker.poisons && defender.alive && Math.random() < 0.5) {
+    if (attacker.poisons && defender.alive && rng() < 0.5) {
       this.applyStatus(defender, "poison", 4, 2);
       if (defender.kind === "player") this.log("You are poisoned!", "bad");
     }
@@ -398,6 +451,7 @@ export class Game {
   // Apply damage with floating numbers / blood / shake, and resolve death.
   damageActor(target, dmg, color) {
     const isPlayer = target.kind === "player";
+    if (isPlayer && this.cls === "warrior") dmg = Math.max(1, dmg - 1);
     target.hp -= dmg;
     target.flashUntil = this.now + 130;
     this.spawnDamage(target.rx, target.ry, dmg, color || (isPlayer ? "#ff6b5e" : "#ffe6a8"));
@@ -412,6 +466,7 @@ export class Game {
   killMonster(m) {
     if (!m.alive) return;
     m.alive = false;
+    this.runKills++;
     this.log(`The ${m.name} dies.`, "dim");
     audio.enemyDie();
     this.effects.push({
@@ -464,15 +519,38 @@ export class Game {
   }
 
   die() {
-    this.player.alive = false;
+    if (this.over) return;
+    const p = this.player;
+    p.alive = false;
     this.over = true;
     this.log("You have fallen in the dark.", "bad");
     audio.playerDie();
     this.addShake(11, 450);
+    const prev = getBest();
+    saveRun(this.depth, p.level, p.gold, false);
+    updateMeta(this.depth, this.runKills, false);
+    const isPB = !prev || this.depth > prev.depth ||
+      (this.depth === prev.depth && p.gold > prev.gold);
+    let sub = isPB ? " Personal best!" : prev ? ` Best: depth ${prev.depth}, Lv ${prev.level}.` : "";
     showOverlay(
       "You Died",
-      `You reached depth ${this.depth} at level ${this.player.level} with ${this.player.gold} gold.`,
+      `Depth ${this.depth} · Level ${p.level} · ${p.gold} gold.${sub} [Seed: ${this.seedDisplay}]`,
       "Try Again",
+      () => this.start()
+    );
+  }
+
+  showWin() {
+    if (this.over) return;
+    const p = this.player;
+    this.over = true;
+    this.log("You have recovered the Forgotten Relic! You escape into legend.", "gold");
+    saveRun(this.depth, p.level, p.gold, true);
+    updateMeta(this.depth, this.runKills, true);
+    showOverlay(
+      "Victory!",
+      `You recovered the Forgotten Relic from depth ${this.depth} and escaped with ${p.gold} gold at level ${p.level}! [Seed: ${this.seedDisplay}]`,
+      "Play Again",
       () => this.start()
     );
   }
@@ -480,9 +558,17 @@ export class Game {
   // ------------------------------------------------------------------ items
   pickupAt(x, y) {
     const idx = this.items.findIndex((it) => it.x === x && it.y === y);
-    if (idx < 0) return;
+    if (idx < 0) return false;
     const it = this.items[idx];
     const p = this.player;
+
+    if (it.category === "artifact") {
+      this.items.splice(idx, 1);
+      audio.levelUp();
+      this.spawnParticles(p.rx, p.ry, "#ffd700", 24, true);
+      this.showWin();
+      return true;
+    }
 
     switch (it.category) {
       case "gold":
@@ -508,6 +594,7 @@ export class Game {
     audio.pickup();
     this.spawnParticles(p.rx, p.ry, "#ffcf6b", 10, true);
     this.items.splice(idx, 1);
+    return false;
   }
 
   // ---------------------------------------------------------- equipment
@@ -538,7 +625,7 @@ export class Game {
   useConsumable(it) {
     const p = this.player;
     if (it.key === "potion") {
-      const heal = Math.min(p.maxHp - p.hp, it.heal);
+      const heal = this.cls === "mage" ? p.maxHp - p.hp : Math.min(p.maxHp - p.hp, it.heal);
       p.hp += heal;
       this.log(`You quaff a ${it.name} and recover ${heal} HP.`, "good");
       audio.potion();
@@ -646,6 +733,7 @@ export class Game {
       <span class="stat bar">XP
         <span class="track"><span class="fill xp" style="width:${xpPct}%"></span></span></span>
       <span class="stat">Lv <b>${p.level}</b></span>
+      <span class="stat cls-${this.cls}">${CLASSES[this.cls]?.name || ""}</span>
       <span class="stat">ATK <b>${p.atk}</b></span>
       <span class="stat">DEF <b>${p.def}</b></span>
       <span class="stat">Gold <b>${p.gold}</b></span>
@@ -806,6 +894,7 @@ export class Game {
       const sx = Math.round((it.x - camX) * CELL);
       const sy = Math.round((it.y - camY) * CELL);
       if (it.key === "key") this.drawKey(sx, sy);
+      else if (it.key === "artifact") this.drawArtifact(sx, sy);
       else if (it.slot === "armor") this.drawArmorIcon(sx, sy);
       else if (it.slot === "shield") this.drawShieldIcon(sx, sy);
       else drawSprite(ctx, SPR[it.sprite], sx, sy, CELL);
@@ -1022,6 +1111,48 @@ export class Game {
     ctx.stroke();
     ctx.fillRect(cx + 5, cy, 2, 4); // teeth
     ctx.fillRect(cx + 2, cy, 2, 3);
+    ctx.restore();
+  }
+
+  // Pulsing golden diamond — the win artifact.
+  drawArtifact(sx, sy) {
+    const ctx = this.ctx;
+    const pulse = 0.5 + 0.5 * Math.sin(this.now / 220);
+    const bob = Math.sin(this.now / 300) * 2;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + bob;
+    const r = 7 + pulse * 1.5;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.12 + 0.22 * pulse;
+    ctx.fillStyle = "#ffe060";
+    ctx.beginPath();
+    ctx.arc(cx, cy, CELL * 0.46, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "#ffd700";
+    ctx.strokeStyle = "#fffacc";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r * 0.62, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r * 0.62, cy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = "#fff8c0";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 0.55);
+    ctx.lineTo(cx + r * 0.28, cy - r * 0.1);
+    ctx.lineTo(cx, cy + r * 0.1);
+    ctx.lineTo(cx - r * 0.28, cy - r * 0.1);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 

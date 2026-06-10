@@ -17,10 +17,42 @@
       <canvas id="game"></canvas>
       <canvas id="minimap" title="Map"></canvas>
 
+      <div id="class-panel" class="hidden">
+        <div id="class-card">
+          <h2>Choose Your Class</h2>
+          <div id="class-choices">
+            <div class="cls-opt" data-cls="warrior">
+              <h3>Warrior</h3>
+              <div class="cls-stats">40 HP · 6 ATK · 2 DEF</div>
+              <div class="cls-kit">Starts with chainmail armor.</div>
+              <div class="cls-perk">Toughness: take 1 less damage from every hit.</div>
+              <button class="cls-btn">Choose</button>
+            </div>
+            <div class="cls-opt" data-cls="rogue">
+              <h3>Rogue</h3>
+              <div class="cls-stats">25 HP · 8 ATK · 0 DEF</div>
+              <div class="cls-kit">Starts with a short sword.</div>
+              <div class="cls-perk">Backstab: 30% chance to deal double damage.</div>
+              <button class="cls-btn">Choose</button>
+            </div>
+            <div class="cls-opt" data-cls="mage">
+              <h3>Mage</h3>
+              <div class="cls-stats">22 HP · 4 ATK · 0 DEF</div>
+              <div class="cls-kit">Starts with 3 healing potions.</div>
+              <div class="cls-perk">Arcane: potions restore full HP.</div>
+              <button class="cls-btn">Choose</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="overlay" class="hidden">
         <div id="overlay-card">
           <h2 id="overlay-title"></h2>
           <p id="overlay-text"></p>
+          <div id="seed-row" class="hidden">
+            <label>Seed: <input id="seed-input" type="text" placeholder="random" maxlength="20" spellcheck="false" autocomplete="off" /></label>
+          </div>
           <button id="overlay-btn">Begin</button>
         </div>
       </div>

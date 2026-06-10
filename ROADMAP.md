@@ -39,6 +39,9 @@ Claude preview tooling.
 | `js/audio.js` | `audio` (AudioManager singleton) | Web Audio buses, procedural SFX, ambient drone, volume persistence |
 | `js/pathfind.js` | `findPath()` | A* on the tile grid (enemy navigation) |
 | `js/game.js` | `Game`, `showOverlay()` | State, turn loop, combat, items/equipment, status, render, input, HUD |
+| `js/pathfind.js` | `findPath(dungeon,sx,sy,tx,ty,blocked,limit)` | A* pathfinding for enemy AI |
+| `js/scores.js` | `saveRun`, `getBest`, `updateMeta`, `getUnlocks` | Run history, high scores, lifetime meta, unlock flags |
+| `js/rng.js` | `seedRng(n)`, `rng()`, `hashSeed(s)` | Mulberry32 seeded PRNG + string hash |
 
 ### `Dungeon` (js/dungeon.js) cheat-sheet
 - Construct: `new Dungeon(w, h, strategy)` where strategy ∈ `"rooms" | "bsp" | "caves"`.
@@ -265,27 +268,31 @@ milestone are roughly ordered; most are independently shippable.
   (`rangedAttack` + bolt effect). Nests already provide packs (M1).
   - Deferred: bleed/slow statuses and more ranged types — easy extensions of the same hooks.
 
-### M6 — Progression & meta-game
+### M6 — Progression & meta-game  *(DONE)*
 **Goal:** goals, persistence, replayability.
 
-- [ ] **M6-T1 — Win condition.** Artifact at target depth → escape/victory screen.
-  - Files: `js/entities.js` (artifact item), `js/game.js` (`pickupAt`, victory overlay
-    via `showOverlay`).
-  - Done when: grabbing the artifact and reaching the exit shows a win screen.
-- [ ] **M6-T2 — High scores & run history.** Persist best depth/gold/level to
-  `localStorage`; show on title/death screens.
-  - Files: new `js/scores.js`; `js/game.js` (`die`/`start`), `index.html` overlay.
-  - Done when: scores persist across reloads and display.
-- [ ] **M6-T3 — Seeded runs.** Replace `Math.random` with a seeded PRNG; show/enter seed.
-  - Files: new `js/rng.js`; thread through `js/dungeon.js`, `js/entities.js`.
-  - Done when: the same seed reproduces the same run.
-- [ ] **M6-T4 — Character classes.** Warrior/rogue/mage starting kits + a signature skill.
-  - Files: `js/entities.js` (class defs), `js/main.js`/`index.html` (class select),
-    `js/game.js` `start()`.
-  - Done when: choosing a class changes starting stats/kit.
-- [ ] **M6-T5 — Meta unlocks.** Persistent unlocks earned across runs.
-  - Files: `js/scores.js`/new `js/meta.js`; gate content in `entities.js`.
-  - Done when: an unlock persists and affects future runs.
+> Implemented: `js/scores.js` persists per-run history + best score + lifetime meta
+> stats (runs, kills, depth, wins); `js/rng.js` is a mulberry32 seeded PRNG threaded
+> through `dungeon.js`, `entities.js`, and gameplay decisions in `game.js` — seeded
+> per floor via `seedRng((seed ^ depth*Knuth) >>> 0)`. The title overlay shows a seed
+> input (hex, decimal, or word → FNV-1a hash); seed and best score appear on
+> death/win overlays. A class-select panel (Warrior / Rogue / Mage) appears after
+> the title; each class has distinct starting stats, starting kit, and a signature
+> perk (Toughness / Backstab / Arcane). Four meta unlocks (hardened / shadowcraft /
+> archmage / veteran) gate bonus upgrades behind lifetime milestones and are
+> annotated live in the class-select panel.
+
+- [x] **M6-T1 — Win condition.** `the Forgotten Relic` artifact spawns at depth 10;
+  picking it up triggers `showWin()`. `pickupAt` returns `true` to end the turn cleanly.
+- [x] **M6-T2 — High scores & run history.** `js/scores.js` — `saveRun`/`getBest`;
+  death overlay shows personal-best line; title shows last best run.
+- [x] **M6-T3 — Seeded runs.** `js/rng.js` mulberry32 + `hashSeed` (string→u32);
+  seeded each floor; seed input on title screen; seed shown in death/win overlays.
+- [x] **M6-T4 — Character classes.** `CLASSES` in `entities.js`; class-select panel in
+  `index.html`; `applyClass()` in `game.js`; class badge shown in HUD.
+- [x] **M6-T5 — Meta unlocks.** `updateMeta`/`getUnlocks` in `scores.js`; four
+  milestones (depth 5 / 50 kills / 1 win / 10 runs) buff classes; active upgrades
+  annotated in the class-select panel.
 
 ### M7 — World & content
 **Goal:** a living dungeon and surrounding world.
