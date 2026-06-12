@@ -39,17 +39,20 @@ Claude preview tooling.
 | `js/audio.js` | `audio` (AudioManager singleton) | Web Audio buses, procedural SFX, ambient drone, volume persistence |
 | `js/pathfind.js` | `findPath()` | A* on the tile grid (enemy navigation) |
 | `js/game.js` | `Game`, `showOverlay()` | State, turn loop, combat, items/equipment, status, render, input, HUD |
-| `js/pathfind.js` | `findPath(dungeon,sx,sy,tx,ty,blocked,limit)` | A* pathfinding for enemy AI |
 | `js/scores.js` | `saveRun`, `getBest`, `updateMeta`, `getUnlocks` | Run history, high scores, lifetime meta, unlock flags |
 | `js/rng.js` | `seedRng(n)`, `rng()`, `hashSeed(s)` | Mulberry32 seeded PRNG + string hash |
+| `js/npc.js` | `NPCS`, `makeNpc`, `genWares` | Merchant/healer templates + shop stock |
 
 ### `Dungeon` (js/dungeon.js) cheat-sheet
 - Construct: `new Dungeon(w, h, strategy)` where strategy ∈ `"rooms" | "bsp" | "caves"`.
-- Tile types: `WALL|FLOOR|STAIRS|LOCKED|SHRINE`. `LOCKED` blocks move+sight until a key
-  opens it; `SHRINE` is walkable and triggers a one-time blessing.
+- Tile types: `WALL|FLOOR|STAIRS|LOCKED|SHRINE|WATER`. `LOCKED` blocks move+sight until a
+  key opens it; `SHRINE` is walkable and triggers a one-time blessing; `WATER` (cave maps)
+  is walkable but deals 1 cold damage per step.
 - Fields: `tiles`, `decor`, `visible`, `explored`, `rooms` (empty for caves),
   `startPos`, `stairs`, `floors` (reachable, no-key, excludes vault),
-  `vaultCells`/`nestCells`/`shrinePos`/`hasVault` (special rooms; room strategies only).
+  `vaultCells`/`nestCells`/`shrinePos`/`hasVault` (special rooms; room strategies only),
+  `objs[]` (chest/barrel interactables; `getObj/clearObj`), `traps` (Set of hidden
+  spike-trap indices), `lights[]` (torch positions + radius for dynamic lighting).
 - Generation: `generate(strategy)` → `genRooms`/`genBSP`/`genCaves` → `finalize()`.
   `finalize()` floods from `startPos` (`_bfsFrom`), **seals unreachable floor**, places
   stairs at the farthest reachable cell, and builds `floors`. So *every* strategy is
@@ -89,14 +92,19 @@ Claude preview tooling.
 | Pack | File | Grid (cols×rows) | Used now? |
 | --- | --- | --- | --- |
 | Dungeon | `assets/Roguelike Dungeon Pack/Spritesheet/roguelikeDungeon_transparent.png` | 29×18 | Partially (floor/wall/stairs/items) |
-| Characters | `assets/Roguelike Characters Pack/Spritesheet/roguelikeChar_transparent.png` | 54×12 | Partially (6 bodies). **Right-hand columns hold modular armor/helmet/weapon/shield layers — unused.** |
+| Characters | `assets/Roguelike Characters Pack/Spritesheet/roguelikeChar_transparent.png` | 54×12 | Partially (bodies + armor/weapon layers for paper-dolls) |
 | Base | `assets/Roguelike Base Pack/Spritesheet/roguelikeSheet_transparent.png` | 57×31 | **Unused** (outdoor terrain, trees, buildings, doors, fences) |
-| City | `assets/Roguelike City Pack/Tilemap/tilemap_packed.png` | 37×28 | **Unused** (urban tiles; also individual `Tiles/tile_XXXX.png`) |
 | Interior | `assets/Roguelike Interior Pack/Tilesheets/roguelikeIndoor_transparent.png` | 27×18 | **Unused** (furniture, shop interiors) |
+| Tiny Dungeons Biome | `assets/Tiny Dungeons - Biome Dungeon Pack/dungeon_elements/…` | per-object frame strips | **Unused** (animated chest/barrel/lever/gate/brazier/spikes, rat/slime/flying-skull monsters, tileset, particles) |
+| Tiny Dungeons Player | `assets/Tiny Dungeons - Player Extended/…/character_extended.png` | frame strips | **Unused** (animated player: idle/run/jump/push/pull/carry) |
+| Tiny Tales NPC Nobility | `assets/Tiny_Tales_Human_NPC_Nobility_1.0/Original/*.png` | RPG-Maker 3×4 walk sheets | **Unused** (noble/monarch NPC walk cycles, 32px & 48px variants) |
+| Ambience | `assets/dark_dungeon_ambience.mp3` | — | **Used** as the music-bus ambient loop (M7) |
 
-> Tip for any art task: crop with PIL at 17px stride and overlay a labeled grid to
-> read exact `(col,row)` coordinates before adding `SPR` entries. The bodies live in
-> char columns 0–1; dressed adventurers are rows 5–11.
+> Tip for any Kenney-sheet art task: crop with PIL at 17px stride and overlay a labeled
+> grid to read exact `(col,row)` coordinates before adding `SPR` entries. The bodies live
+> in char columns 0–1; dressed adventurers are rows 5–11. The Tiny Dungeons / Tiny Tales
+> packs use **different grids and a different pixel style** than Kenney — measure each
+> strip before use and check the bundled `License.txt` files.
 
 ### Conventions
 - Vanilla ES modules, no framework, no bundler, no dependencies. Keep it that way
@@ -121,7 +129,9 @@ Order chosen for impact-per-effort and to lean on assets already owned:
 ```
 M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, cheap wins
         → M1 [done] → M4 [done]                     ← add DEPTH
-        → M6 (meta/progression) → M7 (world/content) ← make it a COMPLETE game
+        → M6 [done] → M7 [done]                     ← make it a COMPLETE game
+        → M8 (deferred polish) → M9 (new art packs)  ← pay down the backlog, look GREAT
+        → M10 (balance/QoL) → M11 (ship it)          ← make it a RELEASED game
 ```
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
@@ -294,7 +304,7 @@ milestone are roughly ordered; most are independently shippable.
   milestones (depth 5 / 50 kills / 1 win / 10 runs) buff classes; active upgrades
   annotated in the class-select panel.
 
-### M7 — World & content ✅ DONE
+### M7 — World & content  *(DONE)*
 **Goal:** a living dungeon and surrounding world.
 
 > Background music swapped to `assets/dark_dungeon_ambience.mp3` (mp3 via
@@ -321,6 +331,104 @@ milestone are roughly ordered; most are independently shippable.
   mode, pulsing on visible tiles and faintly glowing on explored-but-unseen tiles.
   - Files: `js/dungeon.js` (`lights[]`, torch in `scatterDecor`),
     `js/game.js` (torch glow pass in `render`, `drawTorch`).
+
+### M8 — Deferred polish backlog
+**Goal:** close out every "deferred" note left in M1–M5 so no milestone has loose ends.
+
+- [ ] **M8-T1 — Click-to-move with A\*.** Clicking/tapping a tile walks the whole path,
+  not one greedy step (deferred from M5-T5).
+  - Files: `js/game.js` (`bindPointer`, new `autoPath` field, auto-step in `loop()`),
+    reuses `js/pathfind.js` `findPath`.
+  - Approach: on `pointerdown`, run `findPath` from the player to the clicked tile
+    (monsters block; raise `maxNodes` — long cave paths exceed the 600 default) and store
+    the step list. In `loop()`, when `now >= busyUntil` and a path is queued, feed the
+    next step to `turn(dx,dy)`. **Cancel** the path when the player takes damage, a
+    monster becomes visible, a key is pressed, or the next step is no longer walkable.
+  - Done when: clicking a far explored tile walks around corners; the walk halts on
+    danger; clicking adjacent tiles / monsters still behaves as before (single step,
+    attack, shop).
+- [ ] **M8-T2 — On-screen touch d-pad.** Playable without a keyboard (deferred from M5-T5).
+  - Files: `index.html` (`#dpad` overlay in `#stage`), `css/style.css` (show via
+    `@media (pointer: coarse)` plus a settings checkbox override), `js/main.js`/`js/game.js`
+    (wire buttons → `game.turn`).
+  - Approach: 4 arrow buttons + center wait, semi-transparent, bottom-left of the stage;
+    `pointerdown` + repeat-while-held (interval ≥ `MOVE_MS`); `touch-action: none`.
+  - Done when: a full run (start → fight → descend) works in DevTools touch emulation
+    with the keyboard untouched, and the pad never appears for mouse users by default.
+- [ ] **M8-T3 — Bleed & slow statuses + new ranged foes.** (deferred from M4-T5).
+  - Files: `js/entities.js` (two `MONSTERS` entries + per-template `tint` support in
+    `makeMonster`), `js/game.js` (`tickStatuses` cases, `attack`/`rangedAttack` hooks,
+    HUD status chips), `css/style.css` (status colors).
+  - Approach: **bleed** mirrors poison (red, 3 turns, from bandit/dread-knight hits);
+    **slow** makes the victim lose every other action — for the player, grant the world
+    an extra `enemyTurn()` on alternating turns while slowed. New foes: a **skeleton
+    archer** (ranged 6, bone-white tint, arrow bolt) and a **frost wisp** (ranged 4, icy
+    tint, bolt applies slow), both reusing existing char-sheet layers + tint.
+  - Done when: bandits sometimes cause bleed (red tick + HUD chip), wisp bolts slow the
+    player (log + chip + visible effect), and both foes spawn at their `minDepth`.
+- [ ] **M8-T4 — Distinct theme tilesets.** All four themes currently share one wall tile
+  (deferred from M1-T4).
+  - Files: `js/assets.js` (`SHEETS` — load the Base and/or Interior sheets),
+    `js/game.js` (`THEMES` floor/wall/stairs entries).
+  - Approach: crop the Base (57×31) and Interior (27×18) sheets at 17px stride with a
+    labeled PIL grid; pick a wall+floor pair per theme that reads well under each fog
+    tint; keep the Dungeon sheet for items.
+  - Done when: stepping through depths 1→8 shows four visually distinct wall/floor
+    combinations with no missing-sprite artifacts.
+
+### M9 — New art pack integration
+**Goal:** put the Tiny Dungeons / Tiny Tales packs (added to `assets/` during M4) on
+screen: animated objects, real NPC sprites, animated monsters.
+
+> ⚠ These packs are **not** on the Kenney 16px/17-stride grid. First task for any item
+> here: measure the strip (frame size & count), then build a small frame-strip loader —
+> a `loadStrip(url, frameW)` + `drawFrame(ctx, strip, i, dx, dy, size)` pair in
+> `assets.js` next to the existing sheet loader. Check each pack's `License.txt`.
+
+- [ ] **M9-T1 — Animated interactables.** Replace the procedural `drawChest`/`drawBarrel`
+  canvas drawings with `dungeon_chest.png` / `dungeon_barrel.png` frames; add open-state
+  frames on use; scatter `dungeon_pot_0*.png` / `dungeon_crate.png` as smashables.
+  - Files: `js/assets.js` (strip loader), `js/game.js` (object render pass + `useObject`),
+    `js/dungeon.js` (`_placeInteractables` types).
+- [ ] **M9-T2 — Levers & gates.** A lever (`dungeon_lever.png`) somewhere on the floor
+  opens a gate (`dungeon_gate.png`) elsewhere — a second, art-driven flavor of the
+  vault/key mechanic. Animate the spike trap (`dungeon_spikes.png`) once sprung instead
+  of deleting it.
+  - Files: `js/dungeon.js` (gate tile or obj + lever obj), `js/game.js` (`turn` lever
+    handling, gate render/walkability).
+- [ ] **M9-T3 — NPC sprites & portraits.** Use Tiny Tales walk sheets (e.g. `Original/
+  Noble_M1.png`, `Monarch_F1.png`) for the merchant/healer instead of char-sheet
+  paper-dolls; show the matching portrait in the shop panel header.
+  - Files: `js/npc.js`, `js/game.js` (NPC render path), `index.html`/`css` (portrait img).
+- [ ] **M9-T4 — Animated monsters.** Swap rat/slime to the animated
+  `dungeon_rat.png`/`dungeon_slime.png` strips and add a new **flying skull** monster
+  from `dungeon_flying_skull.png`.
+  - Files: `js/assets.js`, `js/entities.js` (template `strip` field as an alternative to
+    `layers`), `js/game.js` (`drawActor` strip branch with a per-actor anim clock).
+
+### M10 — Balance & quality of life
+**Goal:** make the existing content fair, tunable, and comfortable.
+
+- [ ] **M10-T1 — Difficulty curve pass.** Headless Node sim (auto-player) over seeds ×
+  depths × classes; tune monster scaling, gear tiers, gold/heal prices from the results.
+  - Files: new `test/sim.js` harness; tuning constants in `entities.js`/`game.js`.
+- [ ] **M10-T2 — Death recap.** Death/win overlay gains a run summary: kills, gold,
+  floors, cause of death, run duration; recent-runs list from `scores.js` history.
+- [ ] **M10-T3 — Key rebinding + pause.** Settings panel section to remap movement/wait/
+  inventory keys (persist in `rl_opts`); `Esc`/`P` pauses the rAF world.
+- [ ] **M10-T4 — Readability options.** Colorblind-safe alternates for HP/poison/bleed
+  hues, UI scale slider, reduced-flash mode (caps screen shake + hit flash).
+
+### M11 — Packaging & release
+**Goal:** something people can play without cloning a repo.
+
+- [ ] **M11-T1 — itch.io build.** Script (`build.ps1` or npm-free Node script) that zips
+  `index.html + css + js + only the asset files actually loaded` (the packs are huge —
+  ship only what `assets.js`/`audio.js` reference).
+- [ ] **M11-T2 — PWA / offline.** `manifest.json` + tiny service worker precaching the
+  same file list; favicon + social meta tags.
+- [ ] **M11-T3 — README & screenshots.** Hero GIF/screenshots, controls, credits section
+  for Kenney / Tiny Dungeons / Tiny Tales licenses.
 
 ---
 
