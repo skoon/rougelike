@@ -23,10 +23,13 @@ const saveOpts = (o) => {
   catch { /* ignore */ }
 };
 
-// Wire the footer mute button + settings panel (volume buses, screen shake).
+// Wire the footer mute button + settings panel (volume buses, screen shake,
+// touch d-pad). The d-pad defaults to on for coarse-pointer (touch) devices.
 function setupSettings(game) {
   const opts = Object.assign({ shake: true }, loadOpts());
   game.shakeEnabled = opts.shake;
+  if (opts.dpad === undefined)
+    opts.dpad = window.matchMedia("(pointer: coarse)").matches;
 
   const $ = (id) => document.getElementById(id);
   const master = $("vol-master");
@@ -34,14 +37,19 @@ function setupSettings(game) {
   const sfx = $("vol-sfx");
   const mute = $("mute-btn");
   const shake = $("opt-shake");
+  const dpadOpt = $("opt-dpad");
+  const dpad = $("dpad");
   const gear = $("settings-btn");
   const panel = $("settings-panel");
+
+  const applyDpad = () => dpad.classList.toggle("visible", opts.dpad);
 
   const reflect = () => {
     master.value = Math.round(audio.settings.master * 100);
     music.value = Math.round(audio.settings.music * 100);
     sfx.value = Math.round(audio.settings.sfx * 100);
     shake.checked = game.shakeEnabled;
+    dpadOpt.checked = opts.dpad;
     mute.textContent = audio.settings.muted ? "🔇" : "🔊";
   };
 
@@ -54,7 +62,13 @@ function setupSettings(game) {
     opts.shake = shake.checked;
     saveOpts(opts);
   });
+  dpadOpt.addEventListener("change", () => {
+    opts.dpad = dpadOpt.checked;
+    saveOpts(opts);
+    applyDpad();
+  });
   gear.addEventListener("click", () => panel.classList.toggle("hidden"));
+  applyDpad();
   reflect();
 }
 

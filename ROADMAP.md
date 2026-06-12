@@ -130,7 +130,7 @@ Order chosen for impact-per-effort and to lean on assets already owned:
 M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, cheap wins
         → M1 [done] → M4 [done]                     ← add DEPTH
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
-        → M8 (deferred polish) → M9 (new art packs)  ← pay down the backlog, look GREAT
+        → M8 [done] → M9 (new art packs)             ← pay down the backlog, look GREAT
         → M10 (balance/QoL) → M11 (ship it)          ← make it a RELEASED game
 ```
 
@@ -332,10 +332,23 @@ milestone are roughly ordered; most are independently shippable.
   - Files: `js/dungeon.js` (`lights[]`, torch in `scatterDecor`),
     `js/game.js` (torch glow pass in `render`, `drawTorch`).
 
-### M8 — Deferred polish backlog
+### M8 — Deferred polish backlog  *(DONE — pending manual verification of T2/T4 visuals)*
 **Goal:** close out every "deferred" note left in M1–M5 so no milestone has loose ends.
 
-- [ ] **M8-T1 — Click-to-move with A\*.** Clicking/tapping a tile walks the whole path,
+> Implemented: `autoPath` click-to-move in game.js (`bindPointer`/`autoStep`, stepped
+> from `loop()`), cancelled by key input, player damage, shop, descent, or a newly
+> visible monster ("You stop — something stirs ahead."). `#dpad` overlay + settings
+> toggle (`opt-dpad`, auto-on for coarse pointers). Bleed/slow statuses via the shared
+> `worldTurn()` (slow grants the world an extra `enemyTurn()` on alternating actions);
+> skeleton archer + frost wisp with per-template tints and styled bolts. Distinct
+> theme walls picked from the **Dungeon sheet** (not Base/Interior — same-style tiles
+> existed already): Catacombs (16,7) earthen brick, Caverns (16,2) gray stone, Sunken
+> Depths (4,12) deep water; Crypt unchanged. Verified live: click-to-move walks long
+> paths, opens chests en route, halts on traps/new threats; poison chip + combat
+> regression-tested to depth 2. Not yet eyeballed: d-pad layout, depth 3+/5+/7+ walls,
+> bleed/slow/archer/wisp in the wild (templates Node-tested).
+
+- [x] **M8-T1 — Click-to-move with A\*.** Clicking/tapping a tile walks the whole path,
   not one greedy step (deferred from M5-T5).
   - Files: `js/game.js` (`bindPointer`, new `autoPath` field, auto-step in `loop()`),
     reuses `js/pathfind.js` `findPath`.
@@ -347,7 +360,7 @@ milestone are roughly ordered; most are independently shippable.
   - Done when: clicking a far explored tile walks around corners; the walk halts on
     danger; clicking adjacent tiles / monsters still behaves as before (single step,
     attack, shop).
-- [ ] **M8-T2 — On-screen touch d-pad.** Playable without a keyboard (deferred from M5-T5).
+- [x] **M8-T2 — On-screen touch d-pad.** Playable without a keyboard (deferred from M5-T5).
   - Files: `index.html` (`#dpad` overlay in `#stage`), `css/style.css` (show via
     `@media (pointer: coarse)` plus a settings checkbox override), `js/main.js`/`js/game.js`
     (wire buttons → `game.turn`).
@@ -355,7 +368,7 @@ milestone are roughly ordered; most are independently shippable.
     `pointerdown` + repeat-while-held (interval ≥ `MOVE_MS`); `touch-action: none`.
   - Done when: a full run (start → fight → descend) works in DevTools touch emulation
     with the keyboard untouched, and the pad never appears for mouse users by default.
-- [ ] **M8-T3 — Bleed & slow statuses + new ranged foes.** (deferred from M4-T5).
+- [x] **M8-T3 — Bleed & slow statuses + new ranged foes.** (deferred from M4-T5).
   - Files: `js/entities.js` (two `MONSTERS` entries + per-template `tint` support in
     `makeMonster`), `js/game.js` (`tickStatuses` cases, `attack`/`rangedAttack` hooks,
     HUD status chips), `css/style.css` (status colors).
@@ -366,13 +379,12 @@ milestone are roughly ordered; most are independently shippable.
     tint, bolt applies slow), both reusing existing char-sheet layers + tint.
   - Done when: bandits sometimes cause bleed (red tick + HUD chip), wisp bolts slow the
     player (log + chip + visible effect), and both foes spawn at their `minDepth`.
-- [ ] **M8-T4 — Distinct theme tilesets.** All four themes currently share one wall tile
+- [x] **M8-T4 — Distinct theme tilesets.** All four themes currently share one wall tile
   (deferred from M1-T4).
-  - Files: `js/assets.js` (`SHEETS` — load the Base and/or Interior sheets),
-    `js/game.js` (`THEMES` floor/wall/stairs entries).
-  - Approach: crop the Base (57×31) and Interior (27×18) sheets at 17px stride with a
-    labeled PIL grid; pick a wall+floor pair per theme that reads well under each fog
-    tint; keep the Dungeon sheet for items.
+  - Files: `js/game.js` (`THEMES` wall entries).
+  - Implementation note: the **Dungeon sheet** turned out to already hold three more
+    full wall styles in the existing art style (earthen brick, gray stone blocks, deep
+    water), so no new sheets were loaded; the Base/Interior idea was unnecessary.
   - Done when: stepping through depths 1→8 shows four visually distinct wall/floor
     combinations with no missing-sprite artifacts.
 

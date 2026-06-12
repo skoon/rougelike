@@ -55,6 +55,14 @@
         </div>
       </div>
 
+      <div id="dpad" aria-hidden="true">
+        <button id="dpad-up" type="button" data-dx="0" data-dy="-1">▲</button>
+        <button id="dpad-left" type="button" data-dx="-1" data-dy="0">◀</button>
+        <button id="dpad-wait" type="button" data-dx="0" data-dy="0">●</button>
+        <button id="dpad-right" type="button" data-dx="1" data-dy="0">▶</button>
+        <button id="dpad-down" type="button" data-dx="0" data-dy="1">▼</button>
+      </div>
+
       <div id="overlay" class="hidden">
         <div id="overlay-card">
           <h2 id="overlay-title"></h2>
@@ -94,6 +102,7 @@
       <label>Music <input id="vol-music" type="range" min="0" max="100" /></label>
       <label>SFX <input id="vol-sfx" type="range" min="0" max="100" /></label>
       <label class="check"><input id="opt-shake" type="checkbox" /> Screen shake</label>
+      <label class="check"><input id="opt-dpad" type="checkbox" /> Touch d-pad</label>
     </div>
   </div>
 

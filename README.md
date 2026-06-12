@@ -18,51 +18,60 @@ python -m http.server 8123
 | Action            | Keys                |
 | ----------------- | ------------------- |
 | Move / attack     | Arrow keys or WASD  |
-| Move / attack     | Click or tap a tile |
+| Walk to a tile    | Click or tap it (A\* path; stops at danger) |
 | Wait a turn       | Space               |
 | Inventory         | I                   |
 | Use item (hotbar) | 1 – 9               |
 | Descend           | Step onto the stairs|
 | Restart           | R                   |
 
-Volume (master/music/SFX), mute, and a screen-shake toggle live in the footer
-(⚙ settings + 🔊 mute) and persist across sessions.
+Volume (master/music/SFX), mute, screen shake, and an on-screen touch d-pad
+toggle live in the footer (⚙ settings + 🔊 mute) and persist across sessions.
+The d-pad turns itself on automatically on touch devices.
 
 ## Gameplay
 
 - Procedurally generated dungeons with three generators (rooms+corridors, BSP,
   cellular-automata caves) selected by depth-themed biomes (Crypt → Catacombs →
-  Caverns → Sunken Depths), each with its own tile palette and fog. Every floor is
-  guaranteed fully connected with reachable stairs.
+  Caverns → Sunken Depths), each with its own wall/floor palette and fog. Every
+  floor is guaranteed fully connected with reachable stairs.
+- Three classes (Warrior / Rogue / Mage) with distinct stats, kits, and perks, plus
+  meta unlocks earned across runs. Optional seeded runs (enter a seed on the title
+  screen); high scores and run history persist locally.
+- Win by recovering the Forgotten Relic from depth 10 — or die trying. Death is
+  permanent.
 - Special rooms: locked treasure vaults (find the key), monster nests, and shrines
   that grant a one-time blessing. A unique boss guards every fifth floor.
-- Line-of-sight field of view with remembered (dimmed) explored tiles.
-- Bump-to-attack combat; defeating foes grants XP. Level-ups raise max HP, attack,
-  and periodically defense.
+- A living dungeon: merchants and healers (bump into them to trade), chests and
+  smashable barrels, hidden spike traps, cold water, and flickering torch light.
 - Equipment (weapons, armor, shields) with tiers that scale by depth, auto-equipped
   when better and managed in an inventory panel (I). Carried potions are quaffed
   from a number-key hotbar (1–9).
-- Smarter foes: A* pathfinding, rats that flee when wounded, wraiths that cast
-  ranged bolts, and slimes that poison on hit (with status indicators).
-- Loot: gold, healing potions, gear, and valuable amulets.
-- Six enemy types — beasts (rat, slime) and layered humanoids (goblin, bandit,
-  wraith, dread knight) — gated and scaled by depth, plus tinted "elite"
-  variants on deeper floors. The deeper you go, the deadlier it gets.
+- Eight enemy types — beasts (rat, slime) and layered humanoids (goblin, bandit,
+  skeleton archer, wraith, frost wisp, dread knight) — gated and scaled by depth,
+  plus tinted "elite" variants on deeper floors.
+- Smarter foes: A* pathfinding, rats that flee when wounded, archers and casters
+  that attack from range. Status effects: poison (slimes), bleed (blades), and
+  slow (frost), each with HUD chips and actor tints.
 - Animated actors: directional facing, idle bob, attack lunges, hit flashes and
-  fade-out deaths. Death is permanent.
-- Fully procedural audio (no sound files): synthesized SFX for movement, combat,
-  pickups, level-ups and descent, plus an ambient dungeon drone.
+  fade-out deaths.
+- Audio: synthesized SFX for movement, combat, pickups, level-ups and descent,
+  plus a looping dark-ambience track.
 - Game feel: floating damage/heal numbers, blood and sparkle particles, screen
-  shake, a corner minimap, and mouse/touch click-to-move. Volumes, mute, and a
-  screen-shake toggle persist across sessions.
+  shake, a corner minimap, level-transition fades, and click-to-move pathfinding
+  that halts when something dangerous comes into view.
 
 ## Code layout
 
 | File              | Responsibility                                            |
 | ----------------- | --------------------------------------------------------- |
 | `js/assets.js`    | Sprite-sheet loading and tile coordinate definitions.     |
-| `js/audio.js`     | Web Audio buses, procedural SFX, ambient drone, volumes.  |
-| `js/dungeon.js`   | Map generation (rooms + corridors) and field of view.     |
-| `js/entities.js`  | Monster/item templates and per-depth spawning.            |
+| `js/audio.js`     | Web Audio buses, procedural SFX, ambient music, volumes.  |
+| `js/dungeon.js`   | Map generation (3 strategies), special rooms, traps, FOV. |
+| `js/entities.js`  | Monster/item/class templates and per-depth spawning.      |
+| `js/npc.js`       | Merchant/healer templates and shop stock.                 |
+| `js/pathfind.js`  | A* pathfinding (enemy AI and click-to-move).              |
+| `js/rng.js`       | Seeded PRNG (mulberry32) for reproducible runs.           |
+| `js/scores.js`    | Run history, high scores, lifetime meta, unlocks.         |
 | `js/game.js`      | Game state, turn loop, combat, rendering, input, HUD.     |
-| `js/main.js`      | Bootstrap: load assets, title screen, start.              |
+| `js/main.js`      | Bootstrap: load assets, title screen, settings, start.    |

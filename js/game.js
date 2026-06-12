@@ -22,10 +22,10 @@ const WIN_DEPTH = 10; // depth where the win artifact spawns
 // Depth themes: each picks a generation strategy and a tile palette
 // ([sheet, col, row]) for floor/wall/stairs. Deeper = later entries.
 const THEMES = [
-  { name: "the Crypt",       strategy: "rooms", floor: ["dungeon", 8, 2],   wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(6,5,12,0.55)" },
-  { name: "the Catacombs",   strategy: "bsp",   floor: ["dungeon", 16, 14], wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(10,7,4,0.55)" },
-  { name: "the Caverns",     strategy: "caves", floor: ["dungeon", 16, 12], wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(10,6,3,0.55)" },
-  { name: "the Sunken Depths", strategy: "caves", floor: ["dungeon", 16, 10], wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(4,8,14,0.6)" },
+  { name: "the Crypt",       strategy: "rooms", floor: ["dungeon", 8, 2],   wall: ["dungeon", 22, 4], stairs: ["dungeon", 16, 1], tint: "rgba(6,5,12,0.55)" },  // dark masonry
+  { name: "the Catacombs",   strategy: "bsp",   floor: ["dungeon", 16, 14], wall: ["dungeon", 16, 7], stairs: ["dungeon", 16, 1], tint: "rgba(10,7,4,0.55)" },  // earthen brick
+  { name: "the Caverns",     strategy: "caves", floor: ["dungeon", 16, 12], wall: ["dungeon", 16, 2], stairs: ["dungeon", 16, 1], tint: "rgba(10,6,3,0.55)" },  // rough gray stone
+  { name: "the Sunken Depths", strategy: "caves", floor: ["dungeon", 16, 10], wall: ["dungeon", 4, 12], stairs: ["dungeon", 16, 1], tint: "rgba(4,8,14,0.6)" }, // deep water
 ];
 function themeForDepth(depth) {
   return THEMES[Math.min(THEMES.length - 1, Math.floor((depth - 1) / 2))];
@@ -52,6 +52,8 @@ export class Game {
     this.shake = { mag: 0, until: 0, dur: 1 }; // screen-shake state
     this.shakeEnabled = true;
     this.transition = null; // level-change fade state
+    this.autoPath = null; // queued click-to-move steps
+    this.knownVisible = new Set(); // monsters visible when the walk began
 
     // Minimap canvas (optional; absent in minimal HTML).
     this.mini = document.getElementById("minimap");
@@ -71,6 +73,7 @@ export class Game {
 
     this.bindInput();
     this.bindPointer();
+    this.bindDpad();
     this.loop = this.loop.bind(this);
   }
 
@@ -106,6 +109,7 @@ export class Game {
     this.particles = [];
     this.shake = { mag: 0, until: 0, dur: 1 };
     this.transition = null;
+    this.autoPath = null;
     this.busyUntil = 0;
     this.over = false;
     this.shopOpen = false;
@@ -222,6 +226,7 @@ export class Game {
       const k = e.key.toLowerCase();
       if (k === "r") { e.preventDefault(); this.start(); return; }
       if (this.over || this.shopOpen) return;
+      this.autoPath = null; // any key takes over from click-to-move
       if (k === "i") { e.preventDefault(); this.toggleInventory(); return; }
       if (performance.now() < this.busyUntil) return;
 
@@ -247,7 +252,8 @@ export class Game {
     });
   }
 
-  // Click / tap a tile to step (or attack) one square toward it.
+  // Click / tap a tile: adjacent tiles act immediately (step / attack / shop);
+  // farther explored tiles queue a full A* walk that auto-cancels on danger.
   bindPointer() {
     this.canvas.addEventListener("pointerdown", (e) => {
       if (this.over || this.shopOpen || performance.now() < this.busyUntil) return;
@@ -258,15 +264,83 @@ export class Game {
       const tx = Math.floor(cx / CELL + this.cam.x);
       const ty = Math.floor(cy / CELL + this.cam.y);
       const p = this.player;
-      let dx = Math.sign(tx - p.x);
-      let dy = Math.sign(ty - p.y);
-      // Movement is 4-directional: collapse diagonals to the dominant axis.
-      if (dx !== 0 && dy !== 0) {
-        if (Math.abs(tx - p.x) >= Math.abs(ty - p.y)) dy = 0;
-        else dx = 0;
-      }
-      this.turn(dx, dy); // (0,0) when the player's own tile is tapped = wait
+      const d = this.dungeon;
+      this.autoPath = null;
+      if (!d.inBounds(tx, ty) || !d.explored[d.idx(tx, ty)]) return;
+
+      const dist = Math.abs(tx - p.x) + Math.abs(ty - p.y);
+      if (dist === 0) { this.turn(0, 0); return; } // own tile = wait
+      if (dist === 1) { this.turn(tx - p.x, ty - p.y); return; }
+
+      // Only path to somewhere the final turn() can act on: open ground, a
+      // locked door, or an occupied tile (monster to attack / NPC to talk to).
+      const occupied = this.monsterAt(tx, ty) || this.npcAt(tx, ty);
+      if (!d.isWalkable(tx, ty) && d.get(tx, ty) !== LOCKED && !occupied) return;
+
+      // Monsters/NPCs block intermediate steps, and the walk must not trip
+      // over the stairs or a shrine in passing; the clicked tile is exempt.
+      const blockers = (x, y) =>
+        !!(this.monsterAt(x, y) || this.npcAt(x, y)) ||
+        d.get(x, y) === STAIRS || d.get(x, y) === SHRINE;
+      const path = findPath(d, p.x, p.y, tx, ty, blockers, 2000);
+      if (!path || !path.length) return;
+      this.autoPath = path;
+      // Snapshot current threats: a NEW monster coming into view stops the walk.
+      this.knownVisible = new Set(
+        this.monsters.filter((m) => m.alive && d.visible[d.idx(m.x, m.y)])
+      );
+      this.autoStep();
     });
+  }
+
+  // On-screen touch d-pad: each button steps once, then repeats while held.
+  bindDpad() {
+    const pad = document.getElementById("dpad");
+    if (!pad) return;
+    let timer = null;
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    pad.querySelectorAll("button").forEach((btn) => {
+      const dx = parseInt(btn.dataset.dx, 10);
+      const dy = parseInt(btn.dataset.dy, 10);
+      const step = () => {
+        if (this.over || this.shopOpen || performance.now() < this.busyUntil) return;
+        this.autoPath = null;
+        this.turn(dx, dy);
+      };
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        stop();
+        step();
+        timer = setInterval(step, MOVE_MS + 60);
+      });
+      for (const ev of ["pointerup", "pointerleave", "pointercancel"])
+        btn.addEventListener(ev, stop);
+    });
+  }
+
+  // Advance one queued click-to-move step; stops itself on any surprise.
+  autoStep() {
+    const p = this.player;
+    const step = this.autoPath[0];
+    const isLast = this.autoPath.length === 1;
+    // Someone wandered onto the route (the clicked tile itself is fair game).
+    if (!isLast && (this.monsterAt(step.x, step.y) || this.npcAt(step.x, step.y))) {
+      this.autoPath = null;
+      return;
+    }
+    this.autoPath.shift();
+    if (!this.autoPath.length) this.autoPath = null;
+    this.turn(step.x - p.x, step.y - p.y);
+    if (!this.autoPath || this.over) return;
+    // Stop when a threat that wasn't visible at click time comes into view.
+    for (const m of this.monsters) {
+      if (m.alive && this.dungeon.visible[this.dungeon.idx(m.x, m.y)] &&
+          !this.knownVisible.has(m)) {
+        this.autoPath = null;
+        this.log("You stop — something stirs ahead.", "dim");
+        return;
+      }
+    }
   }
 
   // ----------------------------------------------------------------- turns
@@ -332,11 +406,25 @@ export class Game {
       return;
     }
 
-    this.enemyTurn();
-    if (p.alive) this.tickStatuses(p);
+    this.worldTurn();
     this.dungeon.computeFov(p.x, p.y, FOV_RADIUS);
     this.startTween();
     this.updateHud();
+  }
+
+  // The world's reaction to one player action: monsters act (twice on
+  // alternating turns while the player is slowed), then statuses tick.
+  worldTurn() {
+    const p = this.player;
+    this.enemyTurn();
+    if (p.alive && this.hasStatus(p, "slow")) {
+      this.slowTick = !this.slowTick;
+      if (this.slowTick) {
+        this.log("You move sluggishly — the world surges ahead.", "dim");
+        this.enemyTurn();
+      }
+    }
+    if (p.alive) this.tickStatuses(p);
   }
 
   startTween() {
@@ -363,6 +451,7 @@ export class Game {
   beginDescent() {
     this.log("You find a staircase leading deeper.", "good");
     audio.descend();
+    this.autoPath = null;
     this.busyUntil = Infinity; // lock input for the whole transition
     this.transition = { phase: "out", alpha: 0, duration: 420 };
     this.transitionStart = this.now;
@@ -390,6 +479,11 @@ export class Game {
       if (!m.alive) continue;
       this.tickStatuses(m);
       if (!m.alive) continue;
+      // Slowed monsters lose every other action.
+      if (this.hasStatus(m, "slow")) {
+        m.slowTick = !m.slowTick;
+        if (m.slowTick) continue;
+      }
 
       const sees = this.dungeon.visible[this.dungeon.idx(m.x, m.y)];
       const dist = Math.abs(m.x - p.x) + Math.abs(m.y - p.y);
@@ -476,25 +570,37 @@ export class Game {
       this.applyStatus(defender, "poison", 4, 2);
       if (defender.kind === "player") this.log("You are poisoned!", "bad");
     }
+    // Blade-wielders (bandits, dread knights) can open a bleeding wound.
+    if (attacker.bleeds && defender.alive && rng() < 0.35) {
+      this.applyStatus(defender, "bleed", 3, 2);
+      if (defender.kind === "player") this.log("The wound bleeds freely!", "bad");
+    }
   }
 
   rangedAttack(caster, target) {
     caster.flashUntil = this.now + 80;
     const dmg = this.rollDamage(caster, target);
+    const bolt = caster.bolt || { color: "#b48cff", msg: "hurls a spectral bolt" };
     this.effects.push({
-      type: "bolt", color: "#b48cff",
+      type: "bolt", color: bolt.color,
       x0: caster.rx + 0.5, y0: caster.ry + 0.5,
       x1: target.rx + 0.5, y1: target.ry + 0.5,
       start: this.now, dur: 220,
     });
-    this.log(`The ${caster.name} hurls a spectral bolt for ${dmg}.`, "bad");
+    this.log(`The ${caster.name} ${bolt.msg} for ${dmg}.`, "bad");
     audio.hurt();
     this.damageActor(target, dmg);
+    // Frost casters chill their victim, costing it every other action.
+    if (caster.slows && target.alive && rng() < 0.6) {
+      this.applyStatus(target, "slow", 3, 0);
+      if (target.kind === "player") this.log("Frost crawls up your legs — you are slowed!", "bad");
+    }
   }
 
   // Apply damage with floating numbers / blood / shake, and resolve death.
   damageActor(target, dmg, color) {
     const isPlayer = target.kind === "player";
+    if (isPlayer) this.autoPath = null; // pain interrupts click-to-move
     if (isPlayer && this.cls === "warrior") dmg = Math.max(1, dmg - 1);
     target.hp -= dmg;
     target.flashUntil = this.now + 130;
@@ -532,8 +638,8 @@ export class Game {
   tickStatuses(actor) {
     if (!actor.statuses || !actor.statuses.length) return;
     for (const s of actor.statuses) {
-      if (s.type === "poison") {
-        this.damageActor(actor, s.power, "#7dd65a");
+      if (s.type === "poison" || s.type === "bleed") {
+        this.damageActor(actor, s.power, s.type === "poison" ? "#7dd65a" : "#ff6b5e");
         if (!actor.alive) return;
       }
       s.turns--;
@@ -692,8 +798,7 @@ export class Game {
   // Run the world's reaction to a non-move player action (item use).
   afterAction() {
     if (this.over) return;
-    this.enemyTurn();
-    if (this.player.alive) this.tickStatuses(this.player);
+    this.worldTurn();
     this.dungeon.computeFov(this.player.x, this.player.y, FOV_RADIUS);
     this.startTween();
     this.updateHud();
@@ -820,6 +925,11 @@ export class Game {
     if (this.effects.length)
       this.effects = this.effects.filter((e) => now - e.start < e.dur);
     if (this.particles.length) this.updateParticles(dt);
+    // Click-to-move: take the next queued step once the previous tween ends.
+    if (this.autoPath && !this.over && !this.shopOpen && !this.transition &&
+        now >= this.busyUntil) {
+      this.autoStep();
+    }
     this.centerCamera(false);
     this.render();
     if (this.miniCtx) this.renderMinimap();
@@ -1360,12 +1470,20 @@ export class Game {
   drawActor(a, sx, sy) {
     const flash =
       this.now < a.flashUntil ? (a.flashUntil - this.now) / 130 * 0.85 : 0;
-    // Poison shows as a pulsing green wash; otherwise use any elite tint.
+    // Status washes (poison green / bleed red / slow ice) take priority over
+    // any permanent elite/template tint.
     let tintColor = a.tint;
     let tintStr = a.tint ? (a.tintStrength || 0.4) : 0;
+    const pulse = 0.5 + 0.5 * Math.sin(this.now / 200);
     if (this.hasStatus(a, "poison")) {
       tintColor = "#5fbf3a";
-      tintStr = 0.3 + 0.15 * (0.5 + 0.5 * Math.sin(this.now / 200));
+      tintStr = 0.3 + 0.15 * pulse;
+    } else if (this.hasStatus(a, "bleed")) {
+      tintColor = "#d8453a";
+      tintStr = 0.25 + 0.15 * pulse;
+    } else if (this.hasStatus(a, "slow")) {
+      tintColor = "#7fd4ff";
+      tintStr = 0.3 + 0.15 * pulse;
     }
     this.compositeLayers(a.layers, a.facing, flash, tintStr, tintColor);
 
@@ -1401,6 +1519,7 @@ export class Game {
   openShop(npc) {
     const panel = document.getElementById("shop-panel");
     if (!panel) return;
+    this.autoPath = null;
     this.shopOpen = true;
     document.getElementById("shop-title").textContent = npc.name;
     document.getElementById("shop-greeting").textContent = npc.greeting;
@@ -1484,8 +1603,7 @@ export class Game {
     document.getElementById("shop-close").onclick = () => {
       panel.classList.add("hidden");
       this.shopOpen = false;
-      this.enemyTurn();
-      if (this.player.alive) this.tickStatuses(this.player);
+      this.worldTurn();
       this.dungeon.computeFov(this.player.x, this.player.y, FOV_RADIUS);
       this.startTween();
       this.updateHud();
