@@ -390,13 +390,28 @@ canvas#game {
   max-width: 380px;
   width: 90%;
 }
+#shop-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+#shop-portrait {
+  width: 48px;
+  height: 60px;
+  image-rendering: pixelated;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  flex: none;
+}
 #shop-card h2 {
   margin: 0 0 6px;
   color: var(--accent);
   font-size: 20px;
 }
 #shop-card p {
-  margin: 0 0 14px;
+  margin: 0;
   font-size: 13px;
   color: var(--muted);
   font-style: italic;

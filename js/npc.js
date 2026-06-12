@@ -2,18 +2,18 @@
 
 import { rng } from "./rng.js";
 
+// `strip` points at a Tiny Tales walk sheet (3 cols x 4 rows of 16x20 frames);
+// row 0 faces the camera, column 1 is the standing pose.
 export const NPC_TYPES = {
   merchant: {
     name: "Merchant",
-    layers: [[0, 2]],
-    tint: "#d4a820",
+    strip: { key: "noble", idle: [0, 3], faces: 1, rate: 500 },
     greeting: "Welcome, adventurer. See anything you like?",
     indicator: "$",
   },
   healer: {
     name: "Healer",
-    layers: [[1, 11]],
-    tint: "#5090d8",
+    strip: { key: "princess", idle: [0, 3], faces: 1, rate: 500 },
     greeting: "Your wounds cry out for my art.",
     indicator: "+",
   },
@@ -37,9 +37,8 @@ export function makeNpc(type, x, y) {
     kind: "npc",
     npcType: type,
     name: t.name,
-    layers: t.layers,
-    tint: t.tint,
-    tintStrength: 0.55,
+    layers: null,
+    strip: t.strip,
     greeting: t.greeting,
     indicator: t.indicator,
     x, y,

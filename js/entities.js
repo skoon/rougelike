@@ -10,9 +10,17 @@ import { rng } from "./rng.js";
 // melee hits can cause bleeding. `ranged`: can attack from a distance (value =
 // range in tiles). `slows`: ranged hits can slow. `tint`/`tintStrength` give a
 // template a permanent color wash; `bolt` styles a ranged attack's projectile.
+// `strip` swaps the layered paper-doll for an animated Tiny Dungeons strip:
+// { key, idle:[row,frames], death:[row,frames], faces } where `faces` is the
+// direction the art looks in the source (-1 = left).
 export const MONSTERS = {
-  rat:    { name: "giant rat",    layers: [[0, 2]],                          hp: 6,  atk: 2, def: 0, xp: 3,  minDepth: 1, weight: 5, flees: true },
-  slime:  { name: "green slime",  layers: [[0, 3]],                          hp: 10, atk: 3, def: 0, xp: 5,  minDepth: 1, weight: 4, poisons: true },
+  rat:    { name: "giant rat",    strip: { key: "rat", idle: [0, 13], death: [4, 9], faces: -1 },
+            hp: 6,  atk: 2, def: 0, xp: 3,  minDepth: 1, weight: 5, flees: true },
+  slime:  { name: "green slime",  strip: { key: "slime", idle: [0, 6], death: [3, 8], faces: 1 },
+            tint: "#3fae3f", tintStrength: 0.35,
+            hp: 10, atk: 3, def: 0, xp: 5,  minDepth: 1, weight: 4, poisons: true },
+  skull:  { name: "blazing skull", strip: { key: "skull", idle: [0, 10], death: [3, 7], faces: -1 },
+            hp: 12, atk: 5, def: 0, xp: 11, minDepth: 4, weight: 2 },
   goblin: { name: "goblin",       layers: [[0, 3], [11, 7], [23, 4]],        hp: 12, atk: 4, def: 1, xp: 7,  minDepth: 2, weight: 4 },
   bandit: { name: "bandit",       layers: [[0, 2], [8, 8], [23, 4]],         hp: 15, atk: 5, def: 1, xp: 9,  minDepth: 3, weight: 3, bleeds: true },
   archer: { name: "skeleton archer", layers: [[0, 2], [23, 4]],              hp: 13, atk: 5, def: 0, xp: 12, minDepth: 3, weight: 2, ranged: 6,
@@ -31,7 +39,8 @@ export function makeMonster(key, x, y, depth) {
     kind: "monster",
     key,
     name: t.name,
-    layers: t.layers,
+    layers: t.layers || null,
+    strip: t.strip || null,
     x, y,
     rx: x, ry: y, // render position (for tweening)
     facing: 1,

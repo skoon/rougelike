@@ -365,8 +365,10 @@ export class Dungeon {
         else if (r < 0.06) this.decor[this.idx(x, y)] = "rubble";
         else if (r < 0.10) this.decor[this.idx(x, y)] = "floorAlt";
         else if (r < 0.12) {
-          this.decor[this.idx(x, y)] = "torch";
-          this.lights.push({ x, y, radius: 3.5 });
+          // Half plain torches, half animated braziers — both shed light.
+          const brazier = rng() < 0.5;
+          this.decor[this.idx(x, y)] = brazier ? "brazier" : "torch";
+          this.lights.push({ x, y, radius: brazier ? 4 : 3.5 });
         }
       }
     }
@@ -382,7 +384,7 @@ export class Dungeon {
     this.floors = this.floors.filter((c) => this.get(c.x, c.y) === FLOOR);
   }
 
-  // Scatter chests and barrels across reachable floor cells.
+  // Scatter chests and smashables (barrels, pots, crates) across floor cells.
   _placeInteractables() {
     if (!this.floors.length) return;
     const start = this.startPos;
@@ -393,9 +395,15 @@ export class Dungeon {
     const chestN = Math.max(1, Math.floor(cells.length * 0.03) + rnd(3));
     for (let n = 0; n < chestN && i < cells.length; n++, i++)
       this.objs[this.idx(cells[i].x, cells[i].y)] = { type: "chest" };
-    const barrelN = Math.max(2, Math.floor(cells.length * 0.04) + rnd(4));
-    for (let n = 0; n < barrelN && i < cells.length; n++, i++)
-      this.objs[this.idx(cells[i].x, cells[i].y)] = { type: "barrel" };
+    const smashN = Math.max(2, Math.floor(cells.length * 0.05) + rnd(4));
+    for (let n = 0; n < smashN && i < cells.length; n++, i++) {
+      const r = rng();
+      const obj =
+        r < 0.4 ? { type: "barrel" } :
+        r < 0.75 ? { type: "pot", variant: 1 + rnd(4) } :
+        { type: "crate" };
+      this.objs[this.idx(cells[i].x, cells[i].y)] = obj;
+    }
   }
 
   // Scatter hidden spike traps on floor cells (revealed when stepped on).

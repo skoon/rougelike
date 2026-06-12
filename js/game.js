@@ -1,6 +1,6 @@
 // Core game: state, turn loop, combat, rendering, input, HUD.
 
-import { drawSprite, SPR, TILE } from "./assets.js";
+import { drawSprite, drawFrame, STRIPS, SPR, TILE } from "./assets.js";
 import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER } from "./dungeon.js";
 import { populate, makeMonster, makeBoss, makeItem, CLASSES } from "./entities.js";
 import { makeNpc, genWares } from "./npc.js";
@@ -64,10 +64,12 @@ export class Game {
       this.miniCtx = this.mini.getContext("2d");
     }
 
-    // Offscreen buffer for compositing layered, flipped, tinted actors.
+    // Offscreen buffer for compositing flipped/tinted actors. Sized 2x2 cells
+    // so oversized strip art (32x32 frames) fits; the actor's tile occupies
+    // the centre cell, i.e. the buffer is blitted at (sx-CELL/2, sy-CELL/2).
     this.fx = document.createElement("canvas");
-    this.fx.width = CELL;
-    this.fx.height = CELL;
+    this.fx.width = CELL * 2;
+    this.fx.height = CELL * 2;
     this.fxCtx = this.fx.getContext("2d");
     this.fxCtx.imageSmoothingEnabled = false;
 
@@ -620,7 +622,7 @@ export class Game {
     this.log(`The ${m.name} dies.`, "dim");
     audio.enemyDie();
     this.effects.push({
-      type: "death", layers: m.layers,
+      type: "death", layers: m.layers, strip: m.strip,
       x: m.rx, y: m.ry, facing: m.facing,
       start: this.now, dur: 420,
     });
@@ -1024,6 +1026,10 @@ export class Game {
           const dec = d.decor[i];
           if (dec) {
             if (dec === "torch") this.drawTorch(sx, sy);
+            else if (dec === "brazier") {
+              const f = Math.floor(this.now / 140 + mx * 7 + my * 13) % 4;
+              drawFrame(ctx, "brazier", f, 0, sx - CELL / 2, sy - CELL / 2, 2);
+            }
             else drawSprite(ctx, SPR[dec], sx, sy, CELL);
           }
           if (tile === STAIRS) drawSprite(ctx, theme.stairs, sx, sy, CELL);
@@ -1065,7 +1071,7 @@ export class Game {
     }
     ctx.restore();
 
-    // --- interactable objects: chests and barrels ---
+    // --- interactable objects: chests, barrels, pots, crates ---
     for (let vy = -1; vy <= VIEW_H; vy++) {
       for (let vx = -1; vx <= VIEW_W; vx++) {
         const mx = x0 + vx, my = y0 + vy;
@@ -1074,10 +1080,21 @@ export class Game {
         if (!d.objs[i] || !d.visible[i]) continue;
         const sx = Math.round((mx - camX) * CELL);
         const sy = Math.round((my - camY) * CELL);
-        const obj = d.objs[i];
-        if (obj.type === "chest") this.drawChest(sx, sy);
-        else if (obj.type === "barrel") this.drawBarrel(sx, sy);
+        this.drawObj(d.objs[i], sx, sy);
       }
+    }
+
+    // --- one-shot object animations (chest opening, smashed pots/barrels) ---
+    for (const e of this.effects) {
+      if (e.type !== "obj") continue;
+      const k = Math.min(0.999, (this.now - e.start) / e.dur);
+      const frame = e.from + Math.floor(k * (e.to - e.from + 1));
+      const sx = Math.round((e.x - camX) * CELL);
+      const sy = Math.round((e.y - camY) * CELL);
+      const s = STRIPS[e.strip];
+      if (!s) continue;
+      if (s.fw === 16) drawFrame(ctx, e.strip, frame, 0, sx, sy, 2);
+      else drawFrame(ctx, e.strip, frame, 0, sx - CELL / 2, sy - CELL / 2, 2);
     }
 
     // --- items (only when visible) ---
@@ -1093,16 +1110,25 @@ export class Game {
       else drawSprite(ctx, SPR[it.sprite], sx, sy, CELL);
     }
 
-    // --- death effects (fade + rise to a shadow) ---
+    // --- death effects: strips play their death animation, paper-dolls fade ---
     for (const e of this.effects) {
       if (e.type !== "death") continue;
       const k = (this.now - e.start) / e.dur;
-      const sx = Math.round((e.x - camX) * CELL);
-      const sy = Math.round((e.y - camY) * CELL - k * 12);
-      this.compositeLayers(e.layers, e.facing, 0, k * 0.7, "#000");
-      ctx.globalAlpha = 1 - k;
-      ctx.drawImage(this.fx, sx, sy);
-      ctx.globalAlpha = 1;
+      if (e.strip && e.strip.death) {
+        const [row, n] = e.strip.death;
+        const sx = Math.round((e.x - camX) * CELL);
+        const sy = Math.round((e.y - camY) * CELL);
+        this.compositeActor(e, 0, 0, null,
+          { row, frame: Math.min(n - 1, Math.floor(k * n)) });
+        ctx.drawImage(this.fx, sx - CELL / 2, sy - CELL / 2);
+      } else {
+        const sx = Math.round((e.x - camX) * CELL);
+        const sy = Math.round((e.y - camY) * CELL - k * 12);
+        this.compositeActor(e, 0, k * 0.7, "#000");
+        ctx.globalAlpha = 1 - k;
+        ctx.drawImage(this.fx, sx - CELL / 2, sy - CELL / 2);
+        ctx.globalAlpha = 1;
+      }
     }
 
     // --- monsters (only when visible) ---
@@ -1438,21 +1464,44 @@ export class Game {
     }
   }
 
-  // Composite an actor's layers into the offscreen buffer, optionally flipped
-  // and tinted, leaving the result in `this.fx`.
-  compositeLayers(layers, facing, flashStrength, tintStrength, tintColor) {
+  // Composite an actor's art — paper-doll layers OR an animated strip frame —
+  // into the 2x2-cell offscreen buffer, optionally flipped and tinted. The
+  // actor's logical tile is the centre cell of the buffer.
+  // `animOverride` = { row, frame } plays a specific strip frame (deaths).
+  compositeActor(a, flashStrength, tintStrength, tintColor, animOverride = null) {
     const o = this.fxCtx;
-    o.clearRect(0, 0, CELL, CELL);
-    const flip = facing < 0;
-    if (flip) { o.save(); o.translate(CELL, 0); o.scale(-1, 1); }
-    for (const [c, r] of layers) drawSprite(o, ["chars", c, r], 0, 0, CELL);
+    const B = CELL * 2;
+    o.clearRect(0, 0, B, B);
+    const facing = a.facing || 1;
+    const flip = a.strip ? facing !== (a.strip.faces || 1) : facing < 0;
+    if (flip) { o.save(); o.translate(B, 0); o.scale(-1, 1); }
+    if (a.strip && STRIPS[a.strip.key]) {
+      const s = STRIPS[a.strip.key];
+      let row, frame;
+      if (animOverride) {
+        ({ row, frame } = animOverride);
+      } else {
+        const [r, n] = a.strip.idle;
+        row = r;
+        frame = Math.floor(this.now / (a.strip.rate || 130) + (a.bobPhase || 0) * 3) % n;
+      }
+      const w = s.fw * 2, h = s.fh * 2;
+      // Centre horizontally; 32px monster frames fill the buffer, smaller
+      // art (16x20 NPCs) is anchored to the bottom of the centre cell.
+      const dx = (B - w) / 2;
+      const dy = s.fh === 32 ? 0 : CELL * 1.5 - h;
+      drawFrame(o, a.strip.key, frame, row, dx, dy, 2);
+    } else if (a.layers) {
+      for (const [c, r] of a.layers)
+        drawSprite(o, ["chars", c, r], CELL / 2, CELL / 2, CELL);
+    }
     if (flip) o.restore();
 
     if (tintStrength > 0) {
       o.globalCompositeOperation = "source-atop";
       o.globalAlpha = tintStrength;
       o.fillStyle = tintColor;
-      o.fillRect(0, 0, CELL, CELL);
+      o.fillRect(0, 0, B, B);
       o.globalAlpha = 1;
       o.globalCompositeOperation = "source-over";
     }
@@ -1460,7 +1509,7 @@ export class Game {
       o.globalCompositeOperation = "source-atop";
       o.globalAlpha = flashStrength;
       o.fillStyle = "#ffffff";
-      o.fillRect(0, 0, CELL, CELL);
+      o.fillRect(0, 0, B, B);
       o.globalAlpha = 1;
       o.globalCompositeOperation = "source-over";
     }
@@ -1485,10 +1534,11 @@ export class Game {
       tintColor = "#7fd4ff";
       tintStr = 0.3 + 0.15 * pulse;
     }
-    this.compositeLayers(a.layers, a.facing, flash, tintStr, tintColor);
+    this.compositeActor(a, flash, tintStr, tintColor);
 
+    // Strip art carries its own motion; only paper-dolls get the idle bob.
     let ox = 0;
-    let oy = Math.sin(this.now / 280 + a.bobPhase) * 1.2;
+    let oy = a.strip ? 0 : Math.sin(this.now / 280 + a.bobPhase) * 1.2;
     const LUNGE = 150;
     if (a.lungeStart && this.now - a.lungeStart < LUNGE) {
       const k = (this.now - a.lungeStart) / LUNGE;
@@ -1496,7 +1546,11 @@ export class Game {
       ox += (a.lungeDx || 0) * amt;
       oy += (a.lungeDy || 0) * amt;
     }
-    this.ctx.drawImage(this.fx, Math.round(sx + ox), Math.round(sy + oy));
+    this.ctx.drawImage(
+      this.fx,
+      Math.round(sx + ox - CELL / 2),
+      Math.round(sy + oy - CELL / 2)
+    );
   }
 
   drawHealthBar(ctx, sx, sy, pct) {
@@ -1523,6 +1577,15 @@ export class Game {
     this.shopOpen = true;
     document.getElementById("shop-title").textContent = npc.name;
     document.getElementById("shop-greeting").textContent = npc.greeting;
+    // Portrait: the NPC's standing frame at native resolution (CSS upscales).
+    const pc = document.getElementById("shop-portrait");
+    if (pc && npc.strip && STRIPS[npc.strip.key]) {
+      const s = STRIPS[npc.strip.key];
+      const pctx = pc.getContext("2d");
+      pctx.imageSmoothingEnabled = false;
+      pctx.clearRect(0, 0, pc.width, pc.height);
+      pctx.drawImage(s.img, s.fw, 0, s.fw, s.fh, 0, 0, pc.width, pc.height);
+    }
     const itemsEl = document.getElementById("shop-items");
     itemsEl.innerHTML = "";
     const p = this.player;
@@ -1619,7 +1682,19 @@ export class Game {
   useObject(x, y, obj) {
     this.dungeon.clearObj(x, y);
     const p = this.player;
+    const strip = this.objStrip(obj);
+    // Play the strip's remaining frames as a one-shot animation on the tile.
+    const playAnim = (dur) => {
+      const s = STRIPS[strip];
+      if (!s || s.cols < 2) return;
+      this.effects.push({
+        type: "obj", strip, from: 1, to: s.cols - 1,
+        x, y, start: this.now, dur,
+      });
+    };
+
     if (obj.type === "chest") {
+      playAnim(450);
       if (rng() < 0.15) {
         this.log("The chest is empty.", "dim");
         audio.pickup();
@@ -1637,11 +1712,19 @@ export class Game {
         }
         this.updateHud();
       }
-    } else if (obj.type === "barrel") {
-      this.log("You smash the barrel.", "dim");
+    } else {
+      // Smashables: barrels pay out most often, pots may hide a potion.
+      playAnim(320);
+      const noun = obj.type === "pot" ? "pot" : obj.type;
+      this.log(`You smash the ${noun}.`, "dim");
       audio.hit();
-      this.spawnParticles(x, y, "#8b5c2a", 6);
-      if (rng() < 0.4) {
+      this.spawnParticles(x, y, obj.type === "pot" ? "#b8762a" : "#8b5c2a", 6);
+      const r = rng();
+      if (obj.type === "pot" && r < 0.1) {
+        p.inventory.push(makeItem("potion", 0, 0, this.depth));
+        this.log("A healing potion was hidden inside!", "good");
+        this.updateHud();
+      } else if (r < (obj.type === "barrel" ? 0.4 : 0.3)) {
         const gold = 3 + Math.floor(rng() * (5 + this.depth));
         p.gold += gold;
         this.log(`It had ${gold} gold inside!`, "gold");
@@ -1691,48 +1774,20 @@ export class Game {
     ctx.restore();
   }
 
-  drawChest(sx, sy) {
-    const ctx = this.ctx;
-    const bob = Math.sin(this.now / 350) * 1.2;
-    const cx = sx + CELL / 2;
-    const cy = sy + CELL / 2 + bob;
-    ctx.save();
-    ctx.fillStyle = "#7a4b1e";
-    ctx.strokeStyle = "#3a2208";
-    ctx.lineWidth = 1.5;
-    ctx.fillRect(cx - 7, cy - 1, 14, 9);
-    ctx.strokeRect(cx - 7, cy - 1, 14, 9);
-    ctx.fillStyle = "#9a6030";
-    ctx.fillRect(cx - 7, cy - 5, 14, 4);
-    ctx.strokeRect(cx - 7, cy - 5, 14, 4);
-    ctx.fillStyle = "#f4c542";
-    ctx.strokeStyle = "#b8860b";
-    ctx.lineWidth = 1;
-    ctx.fillRect(cx - 2, cy - 2, 4, 5);
-    ctx.strokeRect(cx - 2, cy - 2, 4, 5);
-    ctx.restore();
+  // Which strip an interactable object renders from.
+  objStrip(obj) {
+    if (obj.type === "chest") return "chest";
+    if (obj.type === "pot") return "pot" + (obj.variant || 1);
+    return obj.type; // barrel, crate
   }
 
-  drawBarrel(sx, sy) {
-    const ctx = this.ctx;
-    const cx = sx + CELL / 2;
-    const cy = sy + CELL / 2 + 2;
-    ctx.save();
-    ctx.fillStyle = "#7a4b1e";
-    ctx.strokeStyle = "#3a2208";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 7, 9, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.strokeStyle = "#4a2a0e";
-    ctx.lineWidth = 1.5;
-    for (const oy of [-4, 4]) {
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + oy, 7.5, 2, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
+  // Idle (frame 0) of a Tiny Dungeons object. 16px chests fill the tile; the
+  // 32px smashables are drawn centred over it.
+  drawObj(obj, sx, sy) {
+    const key = this.objStrip(obj);
+    if (!STRIPS[key]) return;
+    if (STRIPS[key].fw === 16) drawFrame(this.ctx, key, 0, 0, sx, sy, 2);
+    else drawFrame(this.ctx, key, 0, 0, sx - CELL / 2, sy - CELL / 2, 2);
   }
 
   drawNpcIndicator(sx, sy, npc) {
