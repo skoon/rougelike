@@ -8,6 +8,7 @@ export const STAIRS = 2;
 export const LOCKED = 3; // locked door: blocks movement + sight until a key opens it
 export const SHRINE = 4; // steppable tile granting a one-time blessing
 export const WATER = 5; // walkable hazard: cold water deals 1 damage per step
+export const GATE = 6; // portcullis sealing a treasure alcove until its lever is pulled
 
 const rnd = (n) => Math.floor(rng() * n);
 const rint = (min, max) => min + rnd(max - min + 1);
@@ -61,6 +62,9 @@ export class Dungeon {
     this.nestCells = []; // interior of the monster nest (if any)
     this.shrinePos = null; // {x,y} of the shrine tile (if any)
     this.hasVault = false;
+    this.gateCells = []; // interior of the lever-gated alcove (if any)
+    this.gatePos = null; // {x,y} of the GATE tile (if any)
+    this.leverPos = null; // {x,y} of the lever that opens it (if any)
     this.strategy = strategy;
     this.generate(strategy);
   }
@@ -79,7 +83,7 @@ export class Dungeon {
   clearObj(x, y) { if (this.inBounds(x, y)) this.objs[this.idx(x, y)] = null; }
   blocksSight(x, y) {
     const t = this.get(x, y);
-    return t === WALL || t === LOCKED;
+    return t === WALL || t === LOCKED || t === GATE;
   }
 
   // Dispatch to a generation strategy, then run the shared finalize pass that
@@ -91,6 +95,7 @@ export class Dungeon {
     this.finalize();
     if (strategy === "caves") this._placeWater();
     this.scatterDecor();
+    this._placeGate();
     this._placeInteractables();
     this._placeTraps();
   }
@@ -384,12 +389,71 @@ export class Dungeon {
     this.floors = this.floors.filter((c) => this.get(c.x, c.y) === FLOOR);
   }
 
+  // Carve a lever-gated treasure alcove into solid wall (~60% of floors).
+  // Runs after finalize(), and only ever turns WALL into FLOOR/GATE, so it can
+  // never break connectivity; the interior stays out of `floors` (no random
+  // spawns) and is unreachable until the lever opens the GATE tile.
+  _placeGate() {
+    if (rng() > 0.6 || !this.floors.length) return;
+    const floorSet = new Set(this.floors.map((c) => this.idx(c.x, c.y)));
+
+    // Candidate: a 5x5 solid-WALL block whose mid-edge tile touches reachable
+    // floor on the outside — that tile becomes the gate, the 3x3 core the loot.
+    const cands = [];
+    for (let y = 1; y + 4 < this.h - 1; y++) {
+      for (let x = 1; x + 4 < this.w - 1; x++) {
+        let solid = true;
+        for (let dy = 0; dy < 5 && solid; dy++)
+          for (let dx = 0; dx < 5 && solid; dx++)
+            if (this.tiles[this.idx(x + dx, y + dy)] !== WALL) solid = false;
+        if (!solid) continue;
+        const edges = [
+          { gx: x + 2, gy: y,     ox: x + 2, oy: y - 1 },
+          { gx: x + 2, gy: y + 4, ox: x + 2, oy: y + 5 },
+          { gx: x,     gy: y + 2, ox: x - 1, oy: y + 2 },
+          { gx: x + 4, gy: y + 2, ox: x + 5, oy: y + 2 },
+        ];
+        for (const e of edges)
+          if (this.inBounds(e.ox, e.oy) && floorSet.has(this.idx(e.ox, e.oy)))
+            cands.push({ x, y, gx: e.gx, gy: e.gy });
+      }
+    }
+    if (!cands.length) return;
+
+    // The lever goes on plain reachable floor, well away from the gate.
+    const c = cands[rnd(cands.length)];
+    const start = this.startPos;
+    const opts = this.floors.filter(
+      (f) =>
+        !this.objs[this.idx(f.x, f.y)] &&
+        !this.decor[this.idx(f.x, f.y)] &&
+        !(f.x === start.x && f.y === start.y) &&
+        Math.abs(f.x - c.gx) + Math.abs(f.y - c.gy) > 5
+    );
+    if (!opts.length) return;
+
+    for (let dy = 1; dy <= 3; dy++)
+      for (let dx = 1; dx <= 3; dx++) {
+        this.set(c.x + dx, c.y + dy, FLOOR);
+        this.gateCells.push({ x: c.x + dx, y: c.y + dy });
+      }
+    this.set(c.gx, c.gy, GATE);
+    this.gatePos = { x: c.gx, y: c.gy };
+    const lv = opts[rnd(opts.length)];
+    this.objs[this.idx(lv.x, lv.y)] = { type: "lever", pulled: false };
+    this.leverPos = { x: lv.x, y: lv.y };
+  }
+
   // Scatter chests and smashables (barrels, pots, crates) across floor cells.
   _placeInteractables() {
     if (!this.floors.length) return;
     const start = this.startPos;
     const cells = shuffle(
-      this.floors.filter((c) => !(c.x === start.x && c.y === start.y))
+      this.floors.filter(
+        (c) =>
+          !(c.x === start.x && c.y === start.y) &&
+          !this.objs[this.idx(c.x, c.y)] // don't pave over the lever
+      )
     );
     let i = 0;
     const chestN = Math.max(1, Math.floor(cells.length * 0.03) + rnd(3));

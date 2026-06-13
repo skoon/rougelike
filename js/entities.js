@@ -234,6 +234,15 @@ export function populate(dungeon, depth) {
     }
   }
 
+  // --- Lever-gated alcove: a burst of treasure behind the portcullis. ---
+  if (dungeon.gateCells && dungeon.gateCells.length) {
+    const gcells = shuffle(dungeon.gateCells.slice());
+    const kinds = ["amulet", "weapon", "armor", "potion"];
+    const lootN = Math.min(gcells.length, 2 + Math.floor(rng() * 2));
+    for (let n = 0; n < lootN; n++)
+      items.push(makeItem(kinds[n % kinds.length], gcells[n].x, gcells[n].y, depth + 1));
+  }
+
   // --- Monster nest: a dense cluster, with a small reward. ---
   if (dungeon.nestCells.length) {
     const ncells = shuffle(dungeon.nestCells.slice());

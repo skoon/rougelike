@@ -45,8 +45,9 @@ The d-pad turns itself on automatically on touch devices.
 - Special rooms: locked treasure vaults (find the key), monster nests, and shrines
   that grant a one-time blessing. A unique boss guards every fifth floor.
 - A living dungeon: merchants and healers (bump into them to trade — with shop
-  portraits), animated chests, smashable barrels/pots/crates, hidden spike traps,
-  cold water, and flickering torches and braziers.
+  portraits), animated chests, smashable barrels/pots/crates, hidden spike traps
+  that stay sprung, cold water, flickering torches and braziers, and lever-opened
+  portcullis vaults hiding treasure.
 - Equipment (weapons, armor, shields) with tiers that scale by depth, auto-equipped
   when better and managed in an inventory panel (I). Carried potions are quaffed
   from a number-key hotbar (1–9).

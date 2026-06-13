@@ -130,7 +130,7 @@ Order chosen for impact-per-effort and to lean on assets already owned:
 M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, cheap wins
         → M1 [done] → M4 [done]                     ← add DEPTH
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
-        → M8 [done] → M9 (new art packs)             ← pay down the backlog, look GREAT
+        → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
         → M10 (balance/QoL) → M11 (ship it)          ← make it a RELEASED game
 ```
 
@@ -388,7 +388,7 @@ milestone are roughly ordered; most are independently shippable.
   - Done when: stepping through depths 1→8 shows four visually distinct wall/floor
     combinations with no missing-sprite artifacts.
 
-### M9 — New art pack integration  *(T1/T3/T4 done; T2 remaining)*
+### M9 — New art pack integration  *(DONE)*
 **Goal:** put the Tiny Dungeons / Tiny Tales packs (added to `assets/` during M4) on
 screen: animated objects, real NPC sprites, animated monsters.
 
@@ -411,12 +411,17 @@ screen: animated objects, real NPC sprites, animated monsters.
   - Files: `js/assets.js` (strip loader), `js/game.js` (`drawObj`, obj-anim effects,
     `useObject`, brazier decor branch), `js/dungeon.js` (`_placeInteractables`,
     `scatterDecor`).
-- [ ] **M9-T2 — Levers & gates.** A lever (`dungeon_lever.png`) somewhere on the floor
-  opens a gate (`dungeon_gate.png`) elsewhere — a second, art-driven flavor of the
-  vault/key mechanic. Animate the spike trap (`dungeon_spikes.png`) once sprung instead
-  of deleting it.
-  - Files: `js/dungeon.js` (gate tile or obj + lever obj), `js/game.js` (`turn` lever
-    handling, gate render/walkability).
+- [x] **M9-T2 — Levers & gates.** `GATE = 6` tile + `_placeGate()` carves a 3×3 treasure
+  alcove into a solid 5×5 wall pocket on ~40% of floors (60% roll × pocket availability),
+  sealed by a portcullis; a lever obj on distant reachable floor opens it (one-shot gate
+  animation, "gate grinds open" log, open-arch decor remains). Carving only converts WALL,
+  so connectivity can't break — Node-verified on 600 maps: lever always reachable,
+  interior sealed pre-pull and reachable post-open, stairs unaffected, 2–3 loot items
+  (depth+1 tier) inside. Sprung spike traps now play the pop-up animation and leave
+  visible spent-spike studs instead of vanishing. Verified live with seed 32.
+  - Files: `js/dungeon.js` (`GATE`, `_placeGate`, `blocksSight`), `js/game.js` (`turn`
+    gate bump + trap decor, `useObject` lever branch, gate/decor render, minimap),
+    `js/entities.js` (`populate` gate loot), `js/assets.js` (lever/gate/spikes strips).
 - [x] **M9-T3 — NPC sprites & portraits.** Merchant = `Noble_M1`, healer = `Princess_F1`
   (Tiny Tales walk sheets, 16×20 frames, slow idle sway); standing-pose portrait drawn
   into `#shop-portrait` in the shop header.

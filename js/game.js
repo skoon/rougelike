@@ -1,7 +1,7 @@
 // Core game: state, turn loop, combat, rendering, input, HUD.
 
 import { drawSprite, drawFrame, STRIPS, SPR, TILE } from "./assets.js";
-import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER } from "./dungeon.js";
+import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER, GATE } from "./dungeon.js";
 import { populate, makeMonster, makeBoss, makeItem, CLASSES } from "./entities.js";
 import { makeNpc, genWares } from "./npc.js";
 import { findPath } from "./pathfind.js";
@@ -275,9 +275,10 @@ export class Game {
       if (dist === 1) { this.turn(tx - p.x, ty - p.y); return; }
 
       // Only path to somewhere the final turn() can act on: open ground, a
-      // locked door, or an occupied tile (monster to attack / NPC to talk to).
+      // locked door / gate, or an occupied tile (monster or NPC).
       const occupied = this.monsterAt(tx, ty) || this.npcAt(tx, ty);
-      if (!d.isWalkable(tx, ty) && d.get(tx, ty) !== LOCKED && !occupied) return;
+      const tt = d.get(tx, ty);
+      if (!d.isWalkable(tx, ty) && tt !== LOCKED && tt !== GATE && !occupied) return;
 
       // Monsters/NPCs block intermediate steps, and the walk must not trip
       // over the stairs or a shrine in passing; the clicked tile is exempt.
@@ -370,6 +371,9 @@ export class Game {
           this.log("The door is locked — you need a key.", "dim");
           return; // no turn spent
         }
+      } else if (this.dungeon.get(nx, ny) === GATE) {
+        this.log("A heavy portcullis bars the way. A mechanism must open it.", "dim");
+        return; // no turn spent
       } else if (this.dungeon.isWalkable(nx, ny)) {
         p.x = nx; p.y = ny;
         audio.move();
@@ -379,10 +383,15 @@ export class Game {
           this.damageActor(p, 1, "#5ab4e8");
           if (this.over) return;
         }
-        // Spike trap: hidden until sprung.
+        // Spike trap: hidden until sprung, then it stays visible (and spent).
         const ti = this.dungeon.idx(p.x, p.y);
         if (this.dungeon.traps.has(ti)) {
           this.dungeon.traps.delete(ti);
+          this.dungeon.decor[ti] = "spikes";
+          this.effects.push({
+            type: "obj", strip: "spikes", row: 1, from: 0, to: 7,
+            x: p.x, y: p.y, start: this.now, dur: 360,
+          });
           const dmg = 2 + Math.floor(rng() * 4);
           this.log(`Click — a spike trap! You take ${dmg} damage.`, "bad");
           audio.hurt();
@@ -1020,6 +1029,9 @@ export class Game {
           drawSprite(ctx, theme.floor, sx, sy, CELL);
           drawSprite(ctx, SPR.door, sx, sy, CELL);
           this.drawLock(sx, sy);
+        } else if (tile === GATE) {
+          drawSprite(ctx, theme.floor, sx, sy, CELL);
+          drawFrame(ctx, "gate", 0, 0, sx - CELL / 2, sy - CELL / 2, 2);
         } else {
           drawSprite(ctx, theme.floor, sx, sy, CELL);
           if (tile === WATER) this.drawWaterOverlay(sx, sy);
@@ -1030,6 +1042,10 @@ export class Game {
               const f = Math.floor(this.now / 140 + mx * 7 + my * 13) % 4;
               drawFrame(ctx, "brazier", f, 0, sx - CELL / 2, sy - CELL / 2, 2);
             }
+            else if (dec === "gate_open")
+              drawFrame(ctx, "gate", 4, 0, sx - CELL / 2, sy - CELL / 2, 2);
+            else if (dec === "spikes")
+              drawFrame(ctx, "spikes", 6, 0, sx - CELL / 2, sy - CELL / 2, 2);
             else drawSprite(ctx, SPR[dec], sx, sy, CELL);
           }
           if (tile === STAIRS) drawSprite(ctx, theme.stairs, sx, sy, CELL);
@@ -1084,17 +1100,18 @@ export class Game {
       }
     }
 
-    // --- one-shot object animations (chest opening, smashed pots/barrels) ---
+    // --- one-shot object animations (chest opening, smashing, gates, spikes) ---
     for (const e of this.effects) {
       if (e.type !== "obj") continue;
+      if (!d.visible[d.idx(e.x, e.y)]) continue;
       const k = Math.min(0.999, (this.now - e.start) / e.dur);
       const frame = e.from + Math.floor(k * (e.to - e.from + 1));
       const sx = Math.round((e.x - camX) * CELL);
       const sy = Math.round((e.y - camY) * CELL);
       const s = STRIPS[e.strip];
       if (!s) continue;
-      if (s.fw === 16) drawFrame(ctx, e.strip, frame, 0, sx, sy, 2);
-      else drawFrame(ctx, e.strip, frame, 0, sx - CELL / 2, sy - CELL / 2, 2);
+      if (s.fw === 16) drawFrame(ctx, e.strip, frame, e.row || 0, sx, sy, 2);
+      else drawFrame(ctx, e.strip, frame, e.row || 0, sx - CELL / 2, sy - CELL / 2, 2);
     }
 
     // --- items (only when visible) ---
@@ -1231,6 +1248,7 @@ export class Game {
         else if (t === LOCKED) col = "#b06a2e";
         else if (t === SHRINE) col = "#7fe6ff";
         else if (t === WATER) col = "#1a3d80";
+        else if (t === GATE) col = "#9aa6b8";
         else col = "#69697e";
         mm.globalAlpha = d.visible[i] ? 1 : 0.5;
         mm.fillStyle = col;
@@ -1680,6 +1698,33 @@ export class Game {
   }
 
   useObject(x, y, obj) {
+    // Levers persist on their tile; pulling one opens the floor's gate.
+    if (obj.type === "lever") {
+      if (obj.pulled) return;
+      obj.pulled = true;
+      this.effects.push({
+        type: "obj", strip: "lever", row: 0, from: 0, to: 4,
+        x, y, start: this.now, dur: 320,
+      });
+      const g = this.dungeon.gatePos;
+      if (g) {
+        this.dungeon.set(g.x, g.y, FLOOR);
+        this.dungeon.decor[this.dungeon.idx(g.x, g.y)] = "gate_open";
+        this.effects.push({
+          type: "obj", strip: "gate", row: 0, from: 0, to: 4,
+          x: g.x, y: g.y, start: this.now, dur: 500,
+        });
+        this.dungeon.gatePos = null;
+        this.log("You pull the lever. Somewhere, a gate grinds open.", "gold");
+        audio.descend();
+        this.addShake(3, 220);
+      } else {
+        this.log("You pull the lever. Nothing seems to happen.", "dim");
+        audio.pickup();
+      }
+      return;
+    }
+
     this.dungeon.clearObj(x, y);
     const p = this.player;
     const strip = this.objStrip(obj);
@@ -1781,13 +1826,14 @@ export class Game {
     return obj.type; // barrel, crate
   }
 
-  // Idle (frame 0) of a Tiny Dungeons object. 16px chests fill the tile; the
-  // 32px smashables are drawn centred over it.
+  // Idle frame of a Tiny Dungeons object. 16px chests fill the tile; the
+  // 32px objects are drawn centred over it. Pulled levers show frame 4.
   drawObj(obj, sx, sy) {
     const key = this.objStrip(obj);
     if (!STRIPS[key]) return;
-    if (STRIPS[key].fw === 16) drawFrame(this.ctx, key, 0, 0, sx, sy, 2);
-    else drawFrame(this.ctx, key, 0, 0, sx - CELL / 2, sy - CELL / 2, 2);
+    const col = obj.type === "lever" && obj.pulled ? 4 : 0;
+    if (STRIPS[key].fw === 16) drawFrame(this.ctx, key, col, 0, sx, sy, 2);
+    else drawFrame(this.ctx, key, col, 0, sx - CELL / 2, sy - CELL / 2, 2);
   }
 
   drawNpcIndicator(sx, sy, npc) {
