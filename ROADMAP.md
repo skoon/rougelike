@@ -433,7 +433,7 @@ screen: animated objects, real NPC sprites, animated monsters.
   - Files: `js/assets.js`, `js/entities.js` (`strip` template field), `js/game.js`
     (`compositeActor`, death effects).
 
-### M10 — Balance & quality of life  *(T1 done)*
+### M10 — Balance & quality of life  *(T1-T2 done)*
 **Goal:** make the existing content fair, tunable, and comfortable.
 
 - [x] **M10-T1 — Difficulty curve pass.** `test/sim.js` — a headless optimal-play
@@ -451,8 +451,17 @@ screen: animated objects, real NPC sprites, animated monsters.
   - Files: `test/sim.js` (harness), `js/entities.js` (`makeMonster` ATK scaling).
   - Note: the sim is *optimal-play* (perfect focus-fire/potion use, no traps/ranged/
     DoT/forced mobs), so real-game difficulty is higher — tune conservatively against it.
-- [ ] **M10-T2 — Death recap.** Death/win overlay gains a run summary: kills, gold,
-  floors, cause of death, run duration; recent-runs list from `scores.js` history.
+- [x] **M10-T2 — Death recap.** The death/win overlay now shows a recap panel: a
+  class/depth/level/gold/kills/time stat grid, the seed, and a "Recent runs" list from
+  `scores.js` history (win/loss coloured). Death subtitle names the killer ("Slain by
+  the giant rat on depth N"). Cause of death is tracked via a `cause` arg threaded
+  through `damageActor` (melee/ranged attacker name, traps, water, poison/bleed); run
+  duration from `runStart`. `saveRun` now stores a full run object (cls, kills, cause,
+  seed, ms, at) and `getHistory()` exposes it. Verified live (mage death → recap grid +
+  killer subtitle render correctly).
+  - Files: `js/scores.js` (`saveRun` object form, `getHistory`), `js/game.js`
+    (`buildRun`/`renderRecap`, `damageActor` cause, `showOverlay` recap reset),
+    `index.html` (`#overlay-recap`), `css/style.css` (recap styles).
 - [ ] **M10-T3 — Key rebinding + pause.** Settings panel section to remap movement/wait/
   inventory keys (persist in `rl_opts`); `Esc`/`P` pauses the rAF world.
 - [ ] **M10-T4 — Readability options.** Colorblind-safe alternates for HP/poison/bleed

@@ -15,18 +15,24 @@ function loadMeta() {
   } catch { return { totalRuns: 0, totalKills: 0, deepestDepth: 0, wins: 0 }; }
 }
 
-// Save a completed run and update the best if applicable.
-export function saveRun(depth, level, gold, won) {
+// Save a completed run and update the best if applicable. `run` carries
+// { depth, level, gold, won } plus optional recap fields (cls, kills, cause,
+// seed, ms, at). Returns the updated store ({ best, history }).
+export function saveRun(run) {
   const data = load();
-  const run = { depth, level, gold, won };
-  data.history.unshift(run);
+  const entry = { at: Date.now(), ...run };
+  data.history.unshift(entry);
   if (data.history.length > 20) data.history.length = 20;
-  if (!data.best || depth > data.best.depth ||
-      (depth === data.best.depth && gold > data.best.gold)) {
-    data.best = run;
+  if (!data.best || entry.depth > data.best.depth ||
+      (entry.depth === data.best.depth && entry.gold > data.best.gold)) {
+    data.best = entry;
   }
   try { localStorage.setItem(SCORES_KEY, JSON.stringify(data)); } catch {}
   return data;
+}
+
+export function getHistory() {
+  return load().history;
 }
 
 // Update lifetime meta stats at run end; returns the updated meta object.

@@ -6,7 +6,7 @@ import { populate, makeMonster, makeBoss, makeItem, CLASSES } from "./entities.j
 import { makeNpc, genWares } from "./npc.js";
 import { findPath } from "./pathfind.js";
 import { audio } from "./audio.js";
-import { saveRun, getBest, updateMeta, getUnlocks } from "./scores.js";
+import { saveRun, getBest, getHistory, updateMeta, getUnlocks } from "./scores.js";
 import { seedRng, rng } from "./rng.js";
 
 const MAP_W = 50;
@@ -106,6 +106,8 @@ export class Game {
     };
     this.applyClass();  // overrides hp/atk/def and adds starting kit
     this.runKills = 0;
+    this.runStart = Date.now();
+    this.lastHitBy = null; // cause of the player's most recent damage
     this.messages = [];
     this.effects = [];
     this.particles = [];
@@ -380,7 +382,7 @@ export class Game {
         // Water hazard: cold damage on each step.
         if (this.dungeon.get(p.x, p.y) === WATER) {
           this.log("Cold water bites at your feet.", "dim");
-          this.damageActor(p, 1, "#5ab4e8");
+          this.damageActor(p, 1, "#5ab4e8", "the freezing water");
           if (this.over) return;
         }
         // Spike trap: hidden until sprung, then it stays visible (and spent).
@@ -396,7 +398,7 @@ export class Game {
           this.log(`Click — a spike trap! You take ${dmg} damage.`, "bad");
           audio.hurt();
           this.addShake(4, 150);
-          this.damageActor(p, dmg);
+          this.damageActor(p, dmg, undefined, "a spike trap");
           if (this.over) return;
         }
       } else {
@@ -574,7 +576,8 @@ export class Game {
       this.log(`The ${attacker.name} hits you for ${dmg}.`, "bad");
       audio.hurt();
     }
-    this.damageActor(defender, dmg);
+    this.damageActor(defender, dmg, undefined,
+      attacker.kind === "monster" ? `the ${attacker.name}` : undefined);
 
     // Slimes (and the like) can poison on a connecting hit.
     if (attacker.poisons && defender.alive && rng() < 0.5) {
@@ -600,7 +603,7 @@ export class Game {
     });
     this.log(`The ${caster.name} ${bolt.msg} for ${dmg}.`, "bad");
     audio.hurt();
-    this.damageActor(target, dmg);
+    this.damageActor(target, dmg, undefined, `the ${caster.name}`);
     // Frost casters chill their victim, costing it every other action.
     if (caster.slows && target.alive && rng() < 0.6) {
       this.applyStatus(target, "slow", 3, 0);
@@ -609,9 +612,14 @@ export class Game {
   }
 
   // Apply damage with floating numbers / blood / shake, and resolve death.
-  damageActor(target, dmg, color) {
+  // `cause` (a display string) is recorded as the player's last damage source
+  // for the death recap.
+  damageActor(target, dmg, color, cause) {
     const isPlayer = target.kind === "player";
-    if (isPlayer) this.autoPath = null; // pain interrupts click-to-move
+    if (isPlayer) {
+      this.autoPath = null; // pain interrupts click-to-move
+      if (cause) this.lastHitBy = cause;
+    }
     if (isPlayer && this.cls === "warrior") dmg = Math.max(1, dmg - 1);
     target.hp -= dmg;
     target.flashUntil = this.now + 130;
@@ -650,7 +658,8 @@ export class Game {
     if (!actor.statuses || !actor.statuses.length) return;
     for (const s of actor.statuses) {
       if (s.type === "poison" || s.type === "bleed") {
-        this.damageActor(actor, s.power, s.type === "poison" ? "#7dd65a" : "#ff6b5e");
+        this.damageActor(actor, s.power, s.type === "poison" ? "#7dd65a" : "#ff6b5e",
+          s.type === "poison" ? "festering poison" : "bleeding out");
         if (!actor.alive) return;
       }
       s.turns--;
@@ -679,6 +688,18 @@ export class Game {
     this.recalcStats();
   }
 
+  // Assemble the run record saved to history and shown in the recap.
+  buildRun(won) {
+    const p = this.player;
+    return {
+      depth: this.depth, level: p.level, gold: p.gold, won,
+      cls: this.cls, kills: this.runKills,
+      cause: won ? null : (this.lastHitBy || "the dark"),
+      seed: this.seedDisplay,
+      ms: Date.now() - this.runStart,
+    };
+  }
+
   die() {
     if (this.over) return;
     const p = this.player;
@@ -688,32 +709,74 @@ export class Game {
     audio.playerDie();
     this.addShake(11, 450);
     const prev = getBest();
-    saveRun(this.depth, p.level, p.gold, false);
+    const run = this.buildRun(false);
+    saveRun(run);
     updateMeta(this.depth, this.runKills, false);
-    const isPB = !prev || this.depth > prev.depth ||
-      (this.depth === prev.depth && p.gold > prev.gold);
-    let sub = isPB ? " Personal best!" : prev ? ` Best: depth ${prev.depth}, Lv ${prev.level}.` : "";
+    const isPB = !prev || run.depth > prev.depth ||
+      (run.depth === prev.depth && run.gold > prev.gold);
     showOverlay(
       "You Died",
-      `Depth ${this.depth} · Level ${p.level} · ${p.gold} gold.${sub} [Seed: ${this.seedDisplay}]`,
+      `Slain by ${run.cause} on depth ${run.depth}.${isPB ? " A new personal best!" : ""}`,
       "Try Again",
       () => this.start()
     );
+    this.renderRecap(run, prev, isPB);
   }
 
   showWin() {
     if (this.over) return;
-    const p = this.player;
     this.over = true;
     this.log("You have recovered the Forgotten Relic! You escape into legend.", "gold");
-    saveRun(this.depth, p.level, p.gold, true);
+    const prev = getBest();
+    const run = this.buildRun(true);
+    saveRun(run);
     updateMeta(this.depth, this.runKills, true);
     showOverlay(
       "Victory!",
-      `You recovered the Forgotten Relic from depth ${this.depth} and escaped with ${p.gold} gold at level ${p.level}! [Seed: ${this.seedDisplay}]`,
+      `You recovered the Forgotten Relic and escaped into legend.`,
       "Play Again",
       () => this.start()
     );
+    this.renderRecap(run, prev, false);
+  }
+
+  // Populate the overlay's recap panel: this run's stats plus recent history.
+  renderRecap(run, prev, isPB) {
+    const el = document.getElementById("overlay-recap");
+    if (!el) return;
+    const mm = Math.floor(run.ms / 60000);
+    const ss = Math.floor((run.ms % 60000) / 1000);
+    const dur = `${mm}:${ss.toString().padStart(2, "0")}`;
+    const clsName = CLASSES[run.cls]?.name || run.cls;
+
+    const stat = (label, value) =>
+      `<div class="recap-stat"><span>${label}</span><b>${value}</b></div>`;
+    let html = `<div class="recap-grid">` +
+      stat("Class", clsName) +
+      stat("Depth", run.depth) +
+      stat("Level", run.level) +
+      stat("Gold", run.gold) +
+      stat("Kills", run.kills) +
+      stat("Time", dur) +
+      `</div>` +
+      `<div class="recap-seed">Seed ${run.seed}` +
+      (prev && !isPB ? ` · best depth ${prev.depth}, Lv ${prev.level}` : "") +
+      `</div>`;
+
+    // Recent runs (skip the one we just saved, which is index 0).
+    const hist = getHistory().slice(1, 6);
+    if (hist.length) {
+      html += `<div class="recap-head">Recent runs</div><div class="recap-runs">`;
+      for (const h of hist) {
+        const tag = h.won ? "win" : "loss";
+        const mark = h.won ? "★" : "✝";
+        html += `<div class="recap-run ${tag}"><span>${mark} ${CLASSES[h.cls]?.name || h.cls || "?"}</span>` +
+          `<span>depth ${h.depth} · Lv ${h.level} · ${h.gold}g</span></div>`;
+      }
+      html += `</div>`;
+    }
+    el.innerHTML = html;
+    el.classList.remove("hidden");
   }
 
   // ------------------------------------------------------------------ items
@@ -1855,6 +1918,9 @@ export function showOverlay(title, text, btnLabel, onClick) {
   const ov = document.getElementById("overlay");
   document.getElementById("overlay-title").textContent = title;
   document.getElementById("overlay-text").textContent = text;
+  // Recap is opt-in; callers that want it (death/win) populate it afterward.
+  const recap = document.getElementById("overlay-recap");
+  if (recap) { recap.innerHTML = ""; recap.classList.add("hidden"); }
   const btn = document.getElementById("overlay-btn");
   btn.textContent = btnLabel;
   const handler = () => {
