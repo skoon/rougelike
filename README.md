@@ -2,7 +2,9 @@
 
 A small turn-based pixel-art roguelike that runs in the browser, built with plain
 HTML5 Canvas + ES modules (no build step). Art is the
-[Kenney Roguelike](https://kenney.nl/) packs in `assets/` (16×16 tiles, 1px margin).
+[Kenney Roguelike](https://kenney.nl/) packs (16×16 tiles, 1px margin) plus the
+Tiny Dungeons (Roupiks) and Tiny Tales (Megatiles) packs in `assets/` for animated
+objects, monsters, and NPCs.
 
 ## Play
 
@@ -42,14 +44,15 @@ The d-pad turns itself on automatically on touch devices.
   permanent.
 - Special rooms: locked treasure vaults (find the key), monster nests, and shrines
   that grant a one-time blessing. A unique boss guards every fifth floor.
-- A living dungeon: merchants and healers (bump into them to trade), chests and
-  smashable barrels, hidden spike traps, cold water, and flickering torch light.
+- A living dungeon: merchants and healers (bump into them to trade — with shop
+  portraits), animated chests, smashable barrels/pots/crates, hidden spike traps,
+  cold water, and flickering torches and braziers.
 - Equipment (weapons, armor, shields) with tiers that scale by depth, auto-equipped
   when better and managed in an inventory panel (I). Carried potions are quaffed
   from a number-key hotbar (1–9).
-- Eight enemy types — beasts (rat, slime) and layered humanoids (goblin, bandit,
-  skeleton archer, wraith, frost wisp, dread knight) — gated and scaled by depth,
-  plus tinted "elite" variants on deeper floors.
+- Nine enemy types — animated beasts (rat, slime, blazing skull) and layered
+  humanoids (goblin, bandit, skeleton archer, wraith, frost wisp, dread knight) —
+  gated and scaled by depth, plus tinted "elite" variants on deeper floors.
 - Smarter foes: A* pathfinding, rats that flee when wounded, archers and casters
   that attack from range. Status effects: poison (slimes), bleed (blades), and
   slow (frost), each with HUD chips and actor tints.

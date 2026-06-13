@@ -388,35 +388,44 @@ milestone are roughly ordered; most are independently shippable.
   - Done when: stepping through depths 1→8 shows four visually distinct wall/floor
     combinations with no missing-sprite artifacts.
 
-### M9 — New art pack integration
+### M9 — New art pack integration  *(T1/T3/T4 done; T2 remaining)*
 **Goal:** put the Tiny Dungeons / Tiny Tales packs (added to `assets/` during M4) on
 screen: animated objects, real NPC sprites, animated monsters.
 
-> ⚠ These packs are **not** on the Kenney 16px/17-stride grid. First task for any item
-> here: measure the strip (frame size & count), then build a small frame-strip loader —
-> a `loadStrip(url, frameW)` + `drawFrame(ctx, strip, i, dx, dy, size)` pair in
-> `assets.js` next to the existing sheet loader. Check each pack's `License.txt`.
+> Implemented: `STRIP_DEFS`/`STRIPS` + `drawFrame(ctx, key, col, row, dx, dy, scale)`
+> in assets.js (margin-less frame strips, loaded alongside the Kenney sheets). The fx
+> compositing buffer is now **2×2 cells** (64px) and `compositeActor()` draws either
+> paper-doll `layers` or a `strip` frame (`{key, idle:[row,n], death:[row,n], faces,
+> rate}`) with the same flip/tint/flash pipeline; actors blit at `(sx-CELL/2,
+> sy-CELL/2)`. Rat/slime/skull play their real death animations via `animOverride`.
+> Chests/barrels + new pots (4 variants) and crates render from strips and play
+> one-shot open/smash animations (`type:"obj"` effects); braziers (animated, radius-4
+> light) join torches in `scatterDecor`. Licenses checked: both packs allow game use,
+> no redistribution of raw assets — credit in M11-T3.
+> Verified live on depth 1: chests/barrel/pot interactions, animated rats, no console
+> errors; eyeball NPC anchoring (depth 3+), skull (depth 4+), and death anims in play.
 
-- [ ] **M9-T1 — Animated interactables.** Replace the procedural `drawChest`/`drawBarrel`
-  canvas drawings with `dungeon_chest.png` / `dungeon_barrel.png` frames; add open-state
-  frames on use; scatter `dungeon_pot_0*.png` / `dungeon_crate.png` as smashables.
-  - Files: `js/assets.js` (strip loader), `js/game.js` (object render pass + `useObject`),
-    `js/dungeon.js` (`_placeInteractables` types).
+- [x] **M9-T1 — Animated interactables.** Chest/barrel strips with open/smash one-shot
+  animations; pots (`dungeon_pot_01–04`) and crates added as smashables (pots can hide
+  a potion); animated braziers as light-shedding decor.
+  - Files: `js/assets.js` (strip loader), `js/game.js` (`drawObj`, obj-anim effects,
+    `useObject`, brazier decor branch), `js/dungeon.js` (`_placeInteractables`,
+    `scatterDecor`).
 - [ ] **M9-T2 — Levers & gates.** A lever (`dungeon_lever.png`) somewhere on the floor
   opens a gate (`dungeon_gate.png`) elsewhere — a second, art-driven flavor of the
   vault/key mechanic. Animate the spike trap (`dungeon_spikes.png`) once sprung instead
   of deleting it.
   - Files: `js/dungeon.js` (gate tile or obj + lever obj), `js/game.js` (`turn` lever
     handling, gate render/walkability).
-- [ ] **M9-T3 — NPC sprites & portraits.** Use Tiny Tales walk sheets (e.g. `Original/
-  Noble_M1.png`, `Monarch_F1.png`) for the merchant/healer instead of char-sheet
-  paper-dolls; show the matching portrait in the shop panel header.
-  - Files: `js/npc.js`, `js/game.js` (NPC render path), `index.html`/`css` (portrait img).
-- [ ] **M9-T4 — Animated monsters.** Swap rat/slime to the animated
-  `dungeon_rat.png`/`dungeon_slime.png` strips and add a new **flying skull** monster
-  from `dungeon_flying_skull.png`.
-  - Files: `js/assets.js`, `js/entities.js` (template `strip` field as an alternative to
-    `layers`), `js/game.js` (`drawActor` strip branch with a per-actor anim clock).
+- [x] **M9-T3 — NPC sprites & portraits.** Merchant = `Noble_M1`, healer = `Princess_F1`
+  (Tiny Tales walk sheets, 16×20 frames, slow idle sway); standing-pose portrait drawn
+  into `#shop-portrait` in the shop header.
+  - Files: `js/npc.js`, `js/game.js` (`openShop` portrait), `index.html`/`css/style.css`.
+- [x] **M9-T4 — Animated monsters.** Rat and slime now use the animated Tiny Dungeons
+  strips (slime tinted green to keep its identity); new **blazing skull** melee monster
+  (minDepth 4) from `dungeon_flying_skull.png`. Strip deaths play the pack's death rows.
+  - Files: `js/assets.js`, `js/entities.js` (`strip` template field), `js/game.js`
+    (`compositeActor`, death effects).
 
 ### M10 — Balance & quality of life
 **Goal:** make the existing content fair, tunable, and comfortable.
