@@ -89,6 +89,7 @@
       <span>Inventory: <b>I</b></span>
       <span>Use item: <b>1</b>–<b>9</b></span>
       <span>Descend: step onto the <b>stairs</b></span>
+      <span>Pause: <b>P</b></span>
       <span>Restart: <b>R</b></span>
       <span id="audio-controls">
         <button id="mute-btn" type="button" title="Mute / unmute">🔊</button>
@@ -109,6 +110,13 @@
       <label>SFX <input id="vol-sfx" type="range" min="0" max="100" /></label>
       <label class="check"><input id="opt-shake" type="checkbox" /> Screen shake</label>
       <label class="check"><input id="opt-dpad" type="checkbox" /> Touch d-pad</label>
+      <div class="settings-section">Readability</div>
+      <label class="check"><input id="opt-reduce-flash" type="checkbox" /> Reduced flash</label>
+      <label class="check"><input id="opt-colorblind" type="checkbox" /> Colorblind palette</label>
+      <label>UI scale <input id="opt-uiscale" type="range" min="80" max="120" /></label>
+      <div class="settings-section">Controls</div>
+      <div id="keybinds"></div>
+      <button id="keys-reset" type="button">Reset to defaults</button>
     </div>
   </div>
 

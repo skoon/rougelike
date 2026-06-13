@@ -24,12 +24,14 @@ python -m http.server 8123
 | Wait a turn       | Space               |
 | Inventory         | I                   |
 | Use item (hotbar) | 1 – 9               |
+| Pause             | P or Esc            |
 | Descend           | Step onto the stairs|
 | Restart           | R                   |
 
-Volume (master/music/SFX), mute, screen shake, and an on-screen touch d-pad
-toggle live in the footer (⚙ settings + 🔊 mute) and persist across sessions.
-The d-pad turns itself on automatically on touch devices.
+The ⚙ settings panel (footer) holds volume (master/music/SFX), mute, screen
+shake, an on-screen touch d-pad toggle (auto-on for touch devices), readability
+options (reduced flash, colorblind palette, UI scale), and fully rebindable
+movement/wait/inventory/pause keys. All settings persist across sessions.
 
 ## Gameplay
 

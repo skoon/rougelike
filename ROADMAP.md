@@ -131,7 +131,7 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M1 [done] → M4 [done]                     ← add DEPTH
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
-        → M10 (balance/QoL) → M11 (ship it)          ← make it a RELEASED game
+        → M10 [done] → M11 (ship it)                 ← make it a RELEASED game
 ```
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
@@ -433,7 +433,7 @@ screen: animated objects, real NPC sprites, animated monsters.
   - Files: `js/assets.js`, `js/entities.js` (`strip` template field), `js/game.js`
     (`compositeActor`, death effects).
 
-### M10 — Balance & quality of life  *(T1-T2 done)*
+### M10 — Balance & quality of life  *(DONE)*
 **Goal:** make the existing content fair, tunable, and comfortable.
 
 - [x] **M10-T1 — Difficulty curve pass.** `test/sim.js` — a headless optimal-play
@@ -462,10 +462,23 @@ screen: animated objects, real NPC sprites, animated monsters.
   - Files: `js/scores.js` (`saveRun` object form, `getHistory`), `js/game.js`
     (`buildRun`/`renderRecap`, `damageActor` cause, `showOverlay` recap reset),
     `index.html` (`#overlay-recap`), `css/style.css` (recap styles).
-- [ ] **M10-T3 — Key rebinding + pause.** Settings panel section to remap movement/wait/
-  inventory keys (persist in `rl_opts`); `Esc`/`P` pauses the rAF world.
-- [ ] **M10-T4 — Readability options.** Colorblind-safe alternates for HP/poison/bleed
-  hues, UI scale slider, reduced-flash mode (caps screen shake + hit flash).
+- [x] **M10-T3 — Key rebinding + pause.** Settings "Controls" section remaps
+  up/down/left/right/wait/inventory/pause (click a slot → press a key; arrows stay as
+  fixed movement fallbacks); persisted in `rl_opts.keys` with a reset button. `P`
+  (rebindable) or `Esc` pauses — the rAF loop freezes the world and draws a "Paused"
+  banner; input/pointer/d-pad are blocked while paused. Verified live (pause blocks
+  moves, K-rebind moves & unbinds W, reset restores W).
+  - Files: `js/game.js` (`DEFAULT_KEYS`/`KEY_ACTIONS`, `setKeymap`/`actionForKey`/
+    `togglePause`/`drawPauseOverlay`, `captureKey` guard, paused loop), `js/main.js`
+    (rebind UI + capture), `index.html`, `css/style.css`.
+- [x] **M10-T4 — Readability options.** Settings "Readability" section: reduced-flash
+  (caps screen shake to 2.5 and hit-flash alpha to 0.3), a red-green-safe colorblind
+  palette (canvas status/heal tints via `Game.palette()`, plus a `body.cb` CSS remap of
+  the HP bar, log good/bad, and status chips), and a UI-scale slider (80-120%, drives
+  `--game-width`). All persisted in `rl_opts`. Verified live.
+  - Files: `js/game.js` (`palette()`, `reduceFlash`/`colorblind` in `drawActor`/
+    `addShake`/`tickStatuses`/heal), `js/main.js` (`applyReadability` + controls),
+    `index.html`, `css/style.css` (`body.cb`, `--game-width`).
 
 ### M11 — Packaging & release
 **Goal:** something people can play without cloning a repo.

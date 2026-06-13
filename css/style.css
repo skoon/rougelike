@@ -26,13 +26,31 @@ body {
   padding: 16px;
 }
 
+:root { --game-width: 900px; }
+
 #game-wrap {
   position: relative;
-  width: min(900px, 100%);
+  width: min(var(--game-width), 100%);
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+
+/* Colorblind (red-green-safe) palette: keep HP a distinct hue from the
+   green/red status cues, and remap the log + status chips to match the
+   canvas palette in game.js (palette()). */
+body.cb {
+  --hp: #e08a2e;
+  --xp: #37c0e8;
+}
+body.cb #log .msg.good { color: #37c0e8; }
+body.cb #log .msg.bad { color: #ff8c1a; }
+body.cb #stats .status-poison,
+body.cb #stats .status-poison b { color: #3a8cff; }
+body.cb #stats .status-bleed,
+body.cb #stats .status-bleed b { color: #ff8c1a; }
+body.cb #stats .status-slow,
+body.cb #stats .status-slow b { color: #ffe14d; }
 
 #topbar {
   display: flex;
@@ -417,6 +435,50 @@ canvas#game {
   cursor: pointer;
 }
 #settings-panel input[type="checkbox"] { accent-color: var(--accent); }
+
+.settings-section {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+  border-top: 1px solid var(--panel-edge);
+  padding-top: 10px;
+}
+#keybinds { display: flex; flex-direction: column; gap: 4px; }
+.keybind-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.keybind-row button {
+  font: inherit;
+  font-size: 12px;
+  min-width: 64px;
+  padding: 3px 8px;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+}
+.keybind-row button:hover { border-color: var(--accent); }
+.keybind-row button.capturing { color: #111; background: var(--accent); }
+#keys-reset {
+  font: inherit;
+  font-size: 12px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+}
+#keys-reset:hover { border-color: var(--accent); }
 
 #shop-panel {
   position: absolute;

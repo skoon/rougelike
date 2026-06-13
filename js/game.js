@@ -19,6 +19,18 @@ const FOV_RADIUS = 8;
 const MOVE_MS = 90; // tween duration
 const WIN_DEPTH = 10; // depth where the win artifact spawns
 
+// Rebindable action keys (lowercased `event.key`). Arrow keys are always-on
+// movement fallbacks and are not remappable. Overridden from rl_opts.keys.
+export const DEFAULT_KEYS = {
+  up: "w", down: "s", left: "a", right: "d",
+  wait: " ", inventory: "i", pause: "p",
+};
+export const KEY_ACTIONS = [
+  ["up", "Move up"], ["down", "Move down"], ["left", "Move left"],
+  ["right", "Move right"], ["wait", "Wait"], ["inventory", "Inventory"],
+  ["pause", "Pause"],
+];
+
 // Depth themes: each picks a generation strategy and a tile palette
 // ([sheet, col, row]) for floor/wall/stairs. Deeper = later entries.
 const THEMES = [
@@ -54,6 +66,10 @@ export class Game {
     this.transition = null; // level-change fade state
     this.autoPath = null; // queued click-to-move steps
     this.knownVisible = new Set(); // monsters visible when the walk began
+    this.keymap = { ...DEFAULT_KEYS }; // rebindable action keys
+    this.paused = false;
+    this.reduceFlash = false; // cap screen shake + hit flash (readability)
+    this.colorblind = false;  // use a red-green-safe status/heal palette
 
     // Minimap canvas (optional; absent in minimal HTML).
     this.mini = document.getElementById("minimap");
@@ -225,13 +241,55 @@ export class Game {
   }
 
   // ------------------------------------------------------------------- input
+  // Replace the action keymap (e.g. from saved settings); unknown keys keep
+  // their defaults.
+  setKeymap(map) {
+    this.keymap = { ...DEFAULT_KEYS, ...(map || {}) };
+  }
+
+  // Resolve a lowercased event.key to an action. Arrow keys are fixed movement
+  // fallbacks; everything else comes from the (rebindable) keymap.
+  actionForKey(k) {
+    if (k === "arrowup") return "up";
+    if (k === "arrowdown") return "down";
+    if (k === "arrowleft") return "left";
+    if (k === "arrowright") return "right";
+    for (const [action] of KEY_ACTIONS) if (this.keymap[action] === k) return action;
+    return null;
+  }
+
+  togglePause() {
+    this.paused = !this.paused;
+    this.autoPath = null;
+    this.log(this.paused ? "Paused." : "Resumed.", "dim");
+  }
+
+  // Status / heal colors, swapped for a red-green-safe set in colorblind mode.
+  palette(key) {
+    const normal = { poison: "#5fbf3a", bleed: "#d8453a", slow: "#7fd4ff", heal: "#6cc04a" };
+    const cb     = { poison: "#3a8cff", bleed: "#ff8c1a", slow: "#ffe14d", heal: "#37c0e8" };
+    return (this.colorblind ? cb : normal)[key];
+  }
+
   bindInput() {
     window.addEventListener("keydown", (e) => {
+      // A settings rebind capture swallows the next key before we see it.
+      if (this.captureKey) return;
       const k = e.key.toLowerCase();
       if (k === "r") { e.preventDefault(); this.start(); return; }
       if (this.over || this.shopOpen) return;
+
+      const action = this.actionForKey(k);
+      // Pause toggles on its key or Escape, even mid-tween.
+      if (k === "escape" || action === "pause") {
+        e.preventDefault();
+        this.togglePause();
+        return;
+      }
+      if (this.paused) return;
+
       this.autoPath = null; // any key takes over from click-to-move
-      if (k === "i") { e.preventDefault(); this.toggleInventory(); return; }
+      if (action === "inventory") { e.preventDefault(); this.toggleInventory(); return; }
       if (performance.now() < this.busyUntil) return;
 
       // Hotbar: number keys quaff the Nth carried consumable.
@@ -241,18 +299,15 @@ export class Game {
         return;
       }
 
-      let dx = 0, dy = 0, wait = false;
-      switch (k) {
-        case "arrowup": case "w": dy = -1; break;
-        case "arrowdown": case "s": dy = 1; break;
-        case "arrowleft": case "a": dx = -1; break;
-        case "arrowright": case "d": dx = 1; break;
-        case " ": case "spacebar": wait = true; break;
-        default: return;
-      }
+      let dx = 0, dy = 0;
+      if (action === "up") dy = -1;
+      else if (action === "down") dy = 1;
+      else if (action === "left") dx = -1;
+      else if (action === "right") dx = 1;
+      else if (action === "wait") { e.preventDefault(); this.turn(0, 0); return; }
+      else return;
       e.preventDefault();
-      if (wait) this.turn(0, 0);
-      else this.turn(dx, dy);
+      this.turn(dx, dy);
     });
   }
 
@@ -260,7 +315,7 @@ export class Game {
   // farther explored tiles queue a full A* walk that auto-cancels on danger.
   bindPointer() {
     this.canvas.addEventListener("pointerdown", (e) => {
-      if (this.over || this.shopOpen || performance.now() < this.busyUntil) return;
+      if (this.over || this.shopOpen || this.paused || performance.now() < this.busyUntil) return;
       e.preventDefault();
       const rect = this.canvas.getBoundingClientRect();
       const cx = (e.clientX - rect.left) * (this.canvas.width / rect.width);
@@ -308,7 +363,7 @@ export class Game {
       const dx = parseInt(btn.dataset.dx, 10);
       const dy = parseInt(btn.dataset.dy, 10);
       const step = () => {
-        if (this.over || this.shopOpen || performance.now() < this.busyUntil) return;
+        if (this.over || this.shopOpen || this.paused || performance.now() < this.busyUntil) return;
         this.autoPath = null;
         this.turn(dx, dy);
       };
@@ -658,7 +713,7 @@ export class Game {
     if (!actor.statuses || !actor.statuses.length) return;
     for (const s of actor.statuses) {
       if (s.type === "poison" || s.type === "bleed") {
-        this.damageActor(actor, s.power, s.type === "poison" ? "#7dd65a" : "#ff6b5e",
+        this.damageActor(actor, s.power, this.palette(s.type),
           s.type === "poison" ? "festering poison" : "bleeding out");
         if (!actor.alive) return;
       }
@@ -853,8 +908,8 @@ export class Game {
       p.hp += heal;
       this.log(`You quaff a ${it.name} and recover ${heal} HP.`, "good");
       audio.potion();
-      this.spawnDamage(p.rx, p.ry, `+${heal}`, "#6cc04a");
-      this.spawnParticles(p.rx, p.ry, "#6cc04a", 8, true);
+      this.spawnDamage(p.rx, p.ry, `+${heal}`, this.palette("heal"));
+      this.spawnParticles(p.rx, p.ry, this.palette("heal"), 8, true);
     }
     p.inventory = p.inventory.filter((x) => x !== it);
     this.renderInventory();
@@ -990,6 +1045,14 @@ export class Game {
     this.now = now;
     const dt = Math.min(0.05, (now - this.lastNow) / 1000) || 0;
     this.lastNow = now;
+    // Paused: freeze the world (no tweens / turns / effects), just show it.
+    if (this.paused) {
+      this.render();
+      this.drawPauseOverlay();
+      if (this.miniCtx) this.renderMinimap();
+      requestAnimationFrame(this.loop);
+      return;
+    }
     if (this.transition) this.updateTransition();
     // Tween render positions toward logical positions.
     const t = 0.35;
@@ -1008,6 +1071,25 @@ export class Game {
     this.render();
     if (this.miniCtx) this.renderMinimap();
     requestAnimationFrame(this.loop);
+  }
+
+  // Dim the screen and show a "Paused" banner over the frozen world.
+  drawPauseOverlay() {
+    const ctx = this.ctx;
+    const w = this.canvas.width, h = this.canvas.height;
+    ctx.save();
+    ctx.fillStyle = "rgba(6,5,12,0.6)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#e8e4d8";
+    ctx.font = "bold 34px 'Trebuchet MS', system-ui, sans-serif";
+    ctx.fillText("Paused", w / 2, h / 2 - 10);
+    ctx.fillStyle = "#8a86a0";
+    ctx.font = "15px 'Trebuchet MS', system-ui, sans-serif";
+    const key = this.keymap.pause === " " ? "Space" : (this.keymap.pause || "P").toUpperCase();
+    ctx.fillText(`Press ${key} or Esc to resume`, w / 2, h / 2 + 22);
+    ctx.restore();
   }
 
   // ------------------------------------------------------- effects / juice
@@ -1037,6 +1119,7 @@ export class Game {
 
   addShake(mag, dur) {
     if (!this.shakeEnabled) return;
+    if (this.reduceFlash) mag = Math.min(mag, 2.5); // gentler shake
     this.shake = { mag: Math.max(this.shake.mag, mag), until: this.now + dur, dur };
   }
 
@@ -1598,21 +1681,22 @@ export class Game {
 
   // Draw a living actor with idle bob, attack lunge, hit flash, elite/poison tint.
   drawActor(a, sx, sy) {
+    const flashCap = this.reduceFlash ? 0.3 : 0.85;
     const flash =
-      this.now < a.flashUntil ? (a.flashUntil - this.now) / 130 * 0.85 : 0;
-    // Status washes (poison green / bleed red / slow ice) take priority over
-    // any permanent elite/template tint.
+      this.now < a.flashUntil ? (a.flashUntil - this.now) / 130 * flashCap : 0;
+    // Status washes (poison / bleed / slow) take priority over any permanent
+    // elite/template tint; hues come from the (colorblind-aware) palette.
     let tintColor = a.tint;
     let tintStr = a.tint ? (a.tintStrength || 0.4) : 0;
     const pulse = 0.5 + 0.5 * Math.sin(this.now / 200);
     if (this.hasStatus(a, "poison")) {
-      tintColor = "#5fbf3a";
+      tintColor = this.palette("poison");
       tintStr = 0.3 + 0.15 * pulse;
     } else if (this.hasStatus(a, "bleed")) {
-      tintColor = "#d8453a";
+      tintColor = this.palette("bleed");
       tintStr = 0.25 + 0.15 * pulse;
     } else if (this.hasStatus(a, "slow")) {
-      tintColor = "#7fd4ff";
+      tintColor = this.palette("slow");
       tintStr = 0.3 + 0.15 * pulse;
     }
     this.compositeActor(a, flash, tintStr, tintColor);
