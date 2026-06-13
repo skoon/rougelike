@@ -332,7 +332,7 @@ milestone are roughly ordered; most are independently shippable.
   - Files: `js/dungeon.js` (`lights[]`, torch in `scatterDecor`),
     `js/game.js` (torch glow pass in `render`, `drawTorch`).
 
-### M8 — Deferred polish backlog  *(DONE — pending manual verification of T2/T4 visuals)*
+### M8 — Deferred polish backlog  *(DONE)*
 **Goal:** close out every "deferred" note left in M1–M5 so no milestone has loose ends.
 
 > Implemented: `autoPath` click-to-move in game.js (`bindPointer`/`autoStep`, stepped
@@ -345,8 +345,8 @@ milestone are roughly ordered; most are independently shippable.
 > existed already): Catacombs (16,7) earthen brick, Caverns (16,2) gray stone, Sunken
 > Depths (4,12) deep water; Crypt unchanged. Verified live: click-to-move walks long
 > paths, opens chests en route, halts on traps/new threats; poison chip + combat
-> regression-tested to depth 2. Not yet eyeballed: d-pad layout, depth 3+/5+/7+ walls,
-> bleed/slow/archer/wisp in the wild (templates Node-tested).
+> regression-tested to depth 2. Remaining visuals (d-pad layout, depth 3+ walls,
+> bleed/slow/archer/wisp in the wild) confirmed by the user's manual playthrough.
 
 - [x] **M8-T1 — Click-to-move with A\*.** Clicking/tapping a tile walks the whole path,
   not one greedy step (deferred from M5-T5).
@@ -403,7 +403,8 @@ screen: animated objects, real NPC sprites, animated monsters.
 > light) join torches in `scatterDecor`. Licenses checked: both packs allow game use,
 > no redistribution of raw assets — credit in M11-T3.
 > Verified live on depth 1: chests/barrel/pot interactions, animated rats, no console
-> errors; eyeball NPC anchoring (depth 3+), skull (depth 4+), and death anims in play.
+> errors; NPC anchoring (depth 3+), skull (depth 4+), and death anims confirmed by
+> the user's manual playthrough.
 
 - [x] **M9-T1 — Animated interactables.** Chest/barrel strips with open/smash one-shot
   animations; pots (`dungeon_pot_01–04`) and crates added as smashables (pots can hide
