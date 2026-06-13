@@ -33,8 +33,20 @@ export const MONSTERS = {
 
 export function makeMonster(key, x, y, depth) {
   const t = MONSTERS[key];
-  // Light scaling so deeper floors stay dangerous.
-  const bonus = Math.floor((depth - t.minDepth) * 0.5);
+  // Depth scaling. `steps` is how many floors past a monster's debut we are, so
+  // newly-introduced monsters stay at baseline. ATK scales faster than HP so it
+  // keeps pace with the player's climbing DEF (level bumps + gear) — otherwise
+  // the back half of a run trivialises into minimum-damage hits. Tuned against
+  // test/sim.js; keep that harness in sync when adjusting these numbers.
+  const steps = Math.max(0, depth - t.minDepth);
+  const hpBonus = Math.floor(steps * 0.5) * 2;
+  // ATK ramps ~1/floor past a monster's debut and is lifted ~70% over the old
+  // baseline so it keeps pace with the player's climbing DEF (level bumps +
+  // gear). Without this, late floors decayed into pure minimum-damage hits.
+  // Validated in test/sim.js: this restores back-half attrition (optimal-play
+  // min-HP ~25-36%, scary runs scaling warrior<rogue<mage) while a careful
+  // run still almost always survives.
+  const atk = Math.round((t.atk + steps) * 1.7);
   return {
     kind: "monster",
     key,
@@ -46,9 +58,9 @@ export function makeMonster(key, x, y, depth) {
     facing: 1,
     bobPhase: rng() * Math.PI * 2,
     flashUntil: 0,
-    hp: t.hp + bonus * 2,
-    maxHp: t.hp + bonus * 2,
-    atk: t.atk + bonus,
+    hp: t.hp + hpBonus,
+    maxHp: t.hp + hpBonus,
+    atk,
     def: t.def,
     xp: t.xp,
     flees: !!t.flees,

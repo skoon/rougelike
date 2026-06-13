@@ -433,12 +433,24 @@ screen: animated objects, real NPC sprites, animated monsters.
   - Files: `js/assets.js`, `js/entities.js` (`strip` template field), `js/game.js`
     (`compositeActor`, death effects).
 
-### M10 — Balance & quality of life
+### M10 — Balance & quality of life  *(T1 done)*
 **Goal:** make the existing content fair, tunable, and comfortable.
 
-- [ ] **M10-T1 — Difficulty curve pass.** Headless Node sim (auto-player) over seeds ×
-  depths × classes; tune monster scaling, gear tiers, gold/heal prices from the results.
-  - Files: new `test/sim.js` harness; tuning constants in `entities.js`/`game.js`.
+- [x] **M10-T1 — Difficulty curve pass.** `test/sim.js` — a headless optimal-play
+  auto-player that imports the real dungeon/entities/rng modules and mirrors game.js's
+  combat + leveling formulas, then reports win%, avg depth/level, min-HP, "scary run"
+  rate, death-by-depth histogram, and top killers per class. Env knobs (`ATK_MULT`,
+  `HP_MULT`, `LVL_HEAL`, `DEBUG`) for sweeping. **Finding:** the late game was trivial —
+  player DEF (~14) + HP (~100) outscaled monster ATK (~11-14), so nearly every hit did
+  the minimum 1 damage; HP/heal tweaks did nothing because no damage was landing.
+  **Fix:** `makeMonster` ATK lifted ~70% (`round((base + steps) * 1.7)`) so it keeps
+  pace with DEF. Result: optimal play still wins ~99-100% (mastery rewarded, headroom
+  for the real game's omitted difficulty) but with genuine back-half attrition — min-HP
+  ~26-38%, scary-run rate scaling warrior<rogue<mage; early floors stay gentle for the
+  sturdy classes. Run: `node test/sim.js [runs] [maxDepth]`.
+  - Files: `test/sim.js` (harness), `js/entities.js` (`makeMonster` ATK scaling).
+  - Note: the sim is *optimal-play* (perfect focus-fire/potion use, no traps/ranged/
+    DoT/forced mobs), so real-game difficulty is higher — tune conservatively against it.
 - [ ] **M10-T2 — Death recap.** Death/win overlay gains a run summary: kills, gold,
   floors, cause of death, run duration; recent-runs list from `scores.js` history.
 - [ ] **M10-T3 — Key rebinding + pause.** Settings panel section to remap movement/wait/
