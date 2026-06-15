@@ -131,13 +131,15 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M1 [done] → M4 [done]                     ← add DEPTH
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
-        → M10 [done] → M11 (ship it)                 ← make it a RELEASED game
-        → M12 → M13 → M14 → M15 → M16                ← post-1.0 depth & replayability
+        → M18 (bugfix) → M10 [done] → M11 (ship it)  ← make it a RELEASED game
+        → M12 → M13 → M14 → M15 → M16 → M17          ← post-1.0 depth & replayability
 ```
 
-Post-1.0 milestones (M12–M16) are independent of each other except where noted
-(M14 builds on M13). Suggested order by impact-per-effort: **M12** (abilities) →
-**M15** (daily run, cheap) → **M13 → M14** (loot overhaul pair) → **M16** (resource clock).
+**M18 is a release-blocking bugfix** (stairs can be sealed by NPCs/doors) — do it
+before/with M11. Post-1.0 milestones (M12–M17) are independent except where noted
+(M14 builds on M13; M17 extends the M7 shop). Suggested order by impact-per-effort:
+**M12** (abilities) → **M15** (daily run, cheap) → **M17** (selling) →
+**M13 → M14** (loot overhaul pair) → **M16** (resource clock).
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
@@ -624,6 +626,67 @@ world) and found torches/rations.
     `js/dungeon.js`/`js/entities.js` (refill items).
   - Done when: low fuel tightens vision and stepping on a brazier / using a torch restores
     it — creating a real "keep moving" tension. Balance the drain rate via `test/sim.js`.
+
+### M17 — Selling to merchants
+**Goal:** make merchants two-way. The player can sell carried gear/consumables for gold,
+and each merchant carries a finite gold purse so selling is a resource, not infinite money.
+
+> Context: `Game.openShop(npc)` (`js/game.js`) builds the shop panel; merchants buy nothing
+> today. `_itemPrice(it)` sets buy prices; `makeNpc("merchant", …)` (`js/npc.js`) and
+> `Game.nextLevel` set up `npc.wareItems`. The panel is `#shop-panel`/`#shop-items`
+> (`index.html`), styled in `css/style.css` (`.shop-row`/`.shop-buy`).
+
+- [ ] **M17-T1 — Merchant gold purse.** Give each merchant a `gold` budget (e.g.
+  `40 + depth * 15`) at spawn; show it in the shop header.
+  - Files: `js/npc.js` (`makeNpc` merchant `gold`), `js/game.js` (`nextLevel` set it,
+    `openShop` display it), `index.html`/`css` (header gold readout).
+  - Done when: opening a merchant shows its available gold.
+- [ ] **M17-T2 — Sell UI + transaction.** A "Sell" section (or toggle) in the shop listing
+  the player's sellable inventory with a sell price; clicking sells one item.
+  - Files: `js/game.js` (`_sellPrice(it)` ≈ `Math.floor(_itemPrice * 0.5)`, a sell list in
+    `openShop`, sell handler), `css/style.css` (reuse `.shop-row`; a tab/heading).
+  - Approach: on sell — remove the item from `player.inventory` (offer equipped items via
+    an "unequip & sell" path or only sell carried), `player.gold += price`,
+    `npc.gold -= price`, then re-render the shop. Disable a row when `npc.gold < price`.
+  - Done when: selling transfers gold both ways, the merchant's purse shrinks and can run
+    out, and the lists refresh correctly. Verify gold conservation (no duplication).
+  - Note: decide whether keys/amulets are sellable (amulets are "gold" category — likely
+    auto-converted on pickup already, so they won't appear here).
+
+### M18 — Bugfix: blockers can seal the stairs
+**Goal:** fix the bug where a merchant, healer, or locked door can occupy the only
+approach to the down-stairs, making a floor impossible to descend without a workaround.
+**Priority: release-blocking — schedule alongside / before M11.**
+
+> Root cause: NPCs are non-walkable and `Game.npcAt` intercepts a step into them to open a
+> shop instead of moving, so an NPC on a 1-wide choke tile walls off whatever is behind it.
+> The healer is placed with `findFloorNear(this.dungeon.stairs, 6)` (`js/game.js`
+> `nextLevel`) — i.e. deliberately near the stairs — which is the prime offender; the
+> merchant (near `startPos`) and `LOCKED` doors can do the same. `findFloorNear` only
+> checks `FLOOR` + no monster, never reachability.
+
+- [ ] **M18-T1 — Reachability-safe blocker placement.** Before committing an NPC to a
+  tile, confirm the stairs stay reachable from `startPos` when that tile is treated as
+  blocked; reject choke tiles and pick another candidate.
+  - Files: `js/game.js` (a `tileSafeToBlock(x, y)` helper doing a BFS over `isWalkable`
+    from `startPos` to `stairs` with `(x,y)` excluded; use it to filter `findFloorNear`
+    results for merchant + healer placement).
+  - Approach: simplest correct fix — generate the candidate, run the BFS, keep only cells
+    that don't disconnect the stairs (and aren't the stairs tile or its sole neighbour).
+  - Done when: NPCs never spawn on a stairs choke point.
+- [ ] **M18-T2 — Doors never gate the stairs without a key route.** Ensure generation can't
+  leave a `LOCKED` door as the only path to the stairs.
+  - Files: `js/dungeon.js` (`finalize`/`_placeSpecials`): after locking, verify the stairs
+    is reachable via `_bfsFrom(startPos)` modelling no-key movement (`WALL`+`LOCKED` block);
+    if not, revert the offending lock (extend the existing vault-orphan revert).
+  - Done when: the stairs is always reachable without a key.
+- [ ] **M18-T3 — Regression test.** Extend a Node harness to assert, over many seeds ×
+  strategies, that the stairs is reachable from `startPos` with NPCs and locked doors
+  treated as blockers.
+  - Files: `test/` (new check, or fold into `test/sim.js`).
+  - Done when: a large run (≥1000 maps) reports zero stairs-blocked failures.
+  - Safety net (optional): if a blocked state is ever detected at runtime, log it and
+    nudge the NPC to an adjacent free tile rather than soft-locking the run.
 
 ---
 
