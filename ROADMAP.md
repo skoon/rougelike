@@ -132,7 +132,12 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
         → M10 [done] → M11 (ship it)                 ← make it a RELEASED game
+        → M12 → M13 → M14 → M15 → M16                ← post-1.0 depth & replayability
 ```
+
+Post-1.0 milestones (M12–M16) are independent of each other except where noted
+(M14 builds on M13). Suggested order by impact-per-effort: **M12** (abilities) →
+**M15** (daily run, cheap) → **M13 → M14** (loot overhaul pair) → **M16** (resource clock).
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
@@ -490,6 +495,135 @@ screen: animated objects, real NPC sprites, animated monsters.
   same file list; favicon + social meta tags.
 - [ ] **M11-T3 — README & screenshots.** Hero GIF/screenshots, controls, credits section
   for Kenney / Tiny Dungeons / Tiny Tales licenses.
+
+---
+
+## Part 4 — Post-1.0 milestones (M12–M16)
+
+Depth and replayability features beyond the shippable game. Same task format as
+Part 3 (**Files** / **Approach** / **Done when**).
+
+---
+
+### M12 — Active class abilities
+**Goal:** turn the three stat profiles into three real playstyles. Combat is currently
+pure bump-attack; the Mage doesn't even have a ranged option despite the fantasy. Give
+each class activated abilities on a turn-cooldown, fired from new hotkeys.
+
+> Context: `CLASSES` (`js/entities.js`) defines stats/kit/perk per class. Combat lives in
+> `Game.attack`/`rangedAttack`/`damageActor` (`js/game.js`); `rangedAttack` already emits a
+> travelling "bolt" `effects` entry, and `findPath`/`lineOfSight` (`js/pathfind.js`,
+> `js/dungeon.js`) exist for targeting. Turn pacing is gated by `busyUntil`/`afterAction`.
+
+- [ ] **M12-T1 — Ability framework + cooldowns.** Per-class `abilities` data, an
+  `useAbility(slot)` path, and per-turn cooldown bookkeeping.
+  - Files: `js/entities.js` (`CLASSES[*].abilities = [{ name, cd, range, … }]`),
+    `js/game.js` (`useAbility`, cooldown tick in `worldTurn`, key handling in `bindInput`
+    for two new actions), `js/game.js` `DEFAULT_KEYS`/`KEY_ACTIONS` (e.g. `ability1`/
+    `ability2`, default `q`/`e`; flows through the M10 rebind UI for free).
+  - Approach: model an ability like a consumable — it costs a turn via `afterAction`,
+    sets a `cooldownUntilTurn` on the player keyed by slot; block use while on cooldown.
+  - Done when: pressing the ability key spends a turn, triggers the effect, and enters a
+    visible cooldown; rebinding the ability keys works.
+- [ ] **M12-T2 — The six abilities.** Warrior: **Cleave** (hit all adjacent foes) +
+    **Brace** (skip a turn, halve next damage). Rogue: **Dash** (blink up to N tiles in a
+    facing, free backstab on arrival) + **Smoke** (break line-of-sight, foes lose you).
+    Mage: **Firebolt** (player-sourced `rangedAttack`, burns) + **Frost Nova** (slow all
+    adjacent).
+  - Files: `js/game.js` (one handler per ability, reusing `attack`/`rangedAttack`/
+    `applyStatus`/`spawnParticles`/the bolt `effects`), `js/entities.js` (ability data).
+  - Done when: each class's two abilities work and read distinctly in play.
+- [ ] **M12-T3 — Ability HUD + telegraph.** Cooldown indicators next to the status chips;
+    a faint targeting hint for ranged/area abilities.
+  - Files: `js/game.js` `updateHud` (cooldown pips), optional `render` overlay for range.
+  - Done when: the player can see which abilities are ready at a glance.
+
+### M13 — Item depth: scrolls, wands & rings
+**Goal:** loot beyond gold / potion / weapon / armor / shield. Add consumable **scrolls**,
+charge-based **wands**, and a **ring/amulet equip slot** with passive bonuses. (Note:
+`amulet` is already an item key that today only awards gold — repurpose or split it.)
+
+> Context: `makeItem`/`GEAR`/`randomLootKind` (`js/entities.js`) generate loot by
+> `category`; `Game.pickupAt` switches on category; `recalcStats`/`equipItem`/
+> `useConsumable` (`js/game.js`) manage gear and consumables; shops (`js/npc.js`
+> `genWares`) and chests (`Game.useObject`) distribute by category automatically.
+
+- [ ] **M13-T1 — Scrolls.** One-shot consumables: **Teleport** (random reachable tile),
+    **Magic Map** (reveal the floor's `explored`), **Enchant** (+1 to a held gear piece).
+  - Files: `js/entities.js` (`scroll` category + sub-kinds), `js/game.js`
+    (`useConsumable` branch per scroll; magic-map flips `dungeon.explored`).
+  - Done when: scrolls drop, appear in the inventory/hotbar, and each effect fires.
+- [ ] **M13-T2 — Wands.** Equippable/holdable items with N charges casting firebolt/freeze
+    (reuse `rangedAttack`); charges shown in the inventory, item consumed at 0.
+  - Files: `js/entities.js` (`wand` category, `charges`), `js/game.js` (use path +
+    targeting; pairs with M12's bolt code if present).
+  - Done when: a wand fires from the hotbar, depletes charges, and is consumed when empty.
+- [ ] **M13-T3 — Ring/amulet slot.** Add `ring` to `player.equip`; rings grant passives
+    (+crit %, HP regen per turn, a damage-type resist) folded in via `recalcStats`.
+  - Files: `js/game.js` (`equip.ring`, `recalcStats`, inventory panel slot, regen tick in
+    `worldTurn`), `js/entities.js` (ring tiers/affixes in `GEAR`).
+  - Done when: rings can be equipped, show in the panel, and their passive measurably
+    affects play (e.g. regen visible in the HUD).
+
+### M14 — Identification & curses  *(builds on M13)*
+**Goal:** classic risk/reward — unknown items are a gamble until identified, and some are
+cursed (locked on, hidden malus) in exchange for a strong bonus.
+
+- [ ] **M14-T1 — Unidentified items.** New gear/rings/wands spawn `identified:false` and
+    show an obscured name ("a glowing ring") until equipped/used or read with a **Scroll of
+    Identify** (extends M13-T1).
+  - Files: `js/entities.js` (`identified` flag in `makeItem`), `js/game.js` (display-name
+    gating in `renderInventory`, recap, and pickup logs; identify-on-equip/use).
+  - Done when: unknown items read as obscured and resolve on identify/equip.
+- [ ] **M14-T2 — Curses.** A fraction of items roll `cursed:true` (a malus or a
+    can't-unequip flag) offset by a larger bonus; revealed on equip. A **Scroll of Remove
+    Curse** lifts it.
+  - Files: `js/entities.js` (`cursed` roll), `js/game.js` (`equipItem` refuses to swap
+    cursed gear; curse reveal log + tint).
+  - Done when: cursed gear sticks until cleansed and the trade-off is legible to the player.
+
+### M15 — Daily challenge & leaderboard
+**Goal:** a shared, fixed-seed run per day for competition and replay. Leans entirely on
+the existing seeded PRNG and run-history persistence.
+
+> Context: `seedRng`/`hashSeed` (`js/rng.js`); `Game.start(seed, cls)` already accepts a
+> seed; `saveRun`/`getHistory`/`getBest` (`js/scores.js`) persist runs; the title overlay
+> (`js/main.js`) already has a seed input + class select.
+
+- [ ] **M15-T1 — Daily seed.** Derive a deterministic seed from the UTC date
+    (`hashSeed("YYYY-MM-DD")`); a "Daily Run" button on the title overlay starts it.
+  - Files: `js/main.js` (button + date→seed), `js/game.js` (`start` with the daily seed,
+    a `this.daily` flag).
+  - Done when: everyone gets the same dungeon on a given day; replaying the same day is
+    identical.
+- [ ] **M15-T2 — Daily board + lockout.** Tag runs `daily:"YYYY-MM-DD"` in `saveRun`; a
+    "Today's runs" list (best depth/gold) in the recap/title; optionally one scored
+    attempt per day.
+  - Files: `js/scores.js` (filter helpers), `js/game.js` `renderRecap` (daily section).
+  - Done when: daily attempts are listed and ranked locally, separate from normal runs.
+  - Note: a real cross-player leaderboard needs a tiny backend — out of scope here; keep
+    the data shape ready for it.
+
+### M16 — Resource clock: torchlight & rations
+**Goal:** add forward pressure so a floor isn't a pure puzzle. A depleting light/food
+meter drains per turn, shrinking FOV as it runs low, refilled by braziers (already in the
+world) and found torches/rations.
+
+> Context: FOV is `dungeon.computeFov(x, y, FOV_RADIUS)` called from `Game.turn`/
+> `worldTurn`; `FOV_RADIUS` is a constant in `js/game.js`. Braziers are placed in
+> `scatterDecor` (`js/dungeon.js`) and already shed light.
+
+- [ ] **M16-T1 — Fuel meter.** A `fuel` counter on the player, decremented each turn in
+    `worldTurn`; a HUD bar beside HP.
+  - Files: `js/game.js` (`player.fuel`, tick, `updateHud` bar), reset/refill on descent.
+  - Done when: fuel drains visibly per turn and refills are possible.
+- [ ] **M16-T2 — Dimming FOV + refills.** Scale the radius passed to `computeFov` down as
+    fuel drops (e.g. 8 → 3); braziers become interactable refills; add `torch`/`ration`
+    pickups.
+  - Files: `js/game.js` (dynamic FOV radius, brazier interaction in `turn`),
+    `js/dungeon.js`/`js/entities.js` (refill items).
+  - Done when: low fuel tightens vision and stepping on a brazier / using a torch restores
+    it — creating a real "keep moving" tension. Balance the drain rate via `test/sim.js`.
 
 ---
 
