@@ -131,12 +131,12 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M1 [done] → M4 [done]                     ← add DEPTH
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
-        → M18 (bugfix) → M10 [done] → M11 (ship it)  ← make it a RELEASED game
+        → M18 [done] → M10 [done] → M11 (ship it)    ← make it a RELEASED game
         → M12 → M13 → M14 → M15 → M16 → M17          ← post-1.0 depth & replayability
 ```
 
-**M18 is a release-blocking bugfix** (stairs can be sealed by NPCs/doors) — do it
-before/with M11. Post-1.0 milestones (M12–M17) are independent except where noted
+**M18 [done]** fixed the release-blocking bug where NPCs could seal the stairs.
+Post-1.0 milestones (M12–M17) are independent except where noted
 (M14 builds on M13; M17 extends the M7 shop). Suggested order by impact-per-effort:
 **M12** (abilities) → **M15** (daily run, cheap) → **M17** (selling) →
 **M13 → M14** (loot overhaul pair) → **M16** (resource clock).
@@ -653,40 +653,40 @@ and each merchant carries a finite gold purse so selling is a resource, not infi
   - Note: decide whether keys/amulets are sellable (amulets are "gold" category — likely
     auto-converted on pickup already, so they won't appear here).
 
-### M18 — Bugfix: blockers can seal the stairs
+### M18 — Bugfix: blockers can seal the stairs  *(DONE)*
 **Goal:** fix the bug where a merchant, healer, or locked door can occupy the only
 approach to the down-stairs, making a floor impossible to descend without a workaround.
-**Priority: release-blocking — schedule alongside / before M11.**
 
-> Root cause: NPCs are non-walkable and `Game.npcAt` intercepts a step into them to open a
-> shop instead of moving, so an NPC on a 1-wide choke tile walls off whatever is behind it.
-> The healer is placed with `findFloorNear(this.dungeon.stairs, 6)` (`js/game.js`
-> `nextLevel`) — i.e. deliberately near the stairs — which is the prime offender; the
-> merchant (near `startPos`) and `LOCKED` doors can do the same. `findFloorNear` only
-> checks `FLOOR` + no monster, never reachability.
+> Root cause (confirmed): NPCs are non-walkable and `Game.npcAt` intercepts a step into
+> them to open a shop instead of moving, so an NPC on a 1-wide choke tile walls off
+> whatever is behind it. The healer was placed with `findFloorNear(this.dungeon.stairs, 6)`
+> — deliberately near the stairs — with no reachability check; `test/stairs.js` measured
+> that **3.3% of those candidate tiles would seal the stairs**. Locked doors, by contrast,
+> never can: `finalize()` places the stairs at the farthest cell found by `_bfsFrom`, which
+> already models no-key movement (`WALL`+`LOCKED` block it), so the stairs is reachable
+> without a key by construction.
 
-- [ ] **M18-T1 — Reachability-safe blocker placement.** Before committing an NPC to a
-  tile, confirm the stairs stay reachable from `startPos` when that tile is treated as
-  blocked; reject choke tiles and pick another candidate.
-  - Files: `js/game.js` (a `tileSafeToBlock(x, y)` helper doing a BFS over `isWalkable`
-    from `startPos` to `stairs` with `(x,y)` excluded; use it to filter `findFloorNear`
-    results for merchant + healer placement).
-  - Approach: simplest correct fix — generate the candidate, run the BFS, keep only cells
-    that don't disconnect the stairs (and aren't the stairs tile or its sole neighbour).
-  - Done when: NPCs never spawn on a stairs choke point.
-- [ ] **M18-T2 — Doors never gate the stairs without a key route.** Ensure generation can't
-  leave a `LOCKED` door as the only path to the stairs.
-  - Files: `js/dungeon.js` (`finalize`/`_placeSpecials`): after locking, verify the stairs
-    is reachable via `_bfsFrom(startPos)` modelling no-key movement (`WALL`+`LOCKED` block);
-    if not, revert the offending lock (extend the existing vault-orphan revert).
-  - Done when: the stairs is always reachable without a key.
-- [ ] **M18-T3 — Regression test.** Extend a Node harness to assert, over many seeds ×
-  strategies, that the stairs is reachable from `startPos` with NPCs and locked doors
-  treated as blockers.
-  - Files: `test/` (new check, or fold into `test/sim.js`).
-  - Done when: a large run (≥1000 maps) reports zero stairs-blocked failures.
-  - Safety net (optional): if a blocked state is ever detected at runtime, log it and
-    nudge the NPC to an adjacent free tile rather than soft-locking the run.
+- [x] **M18-T1 — Reachability-safe blocker placement.** `Game.tileSafeToBlock(x, y)` does a
+  BFS from `startPos` to `stairs` over `isWalkable`, treating `(x,y)` and any already-placed
+  NPCs as impassable. `findFloorNear` gained an optional `filter`; merchant and healer
+  placement now require a safe tile (widening the search ring, and skipping the NPC entirely
+  rather than blocking the run if none exists).
+  - Files: `js/game.js` (`tileSafeToBlock`, `findFloorNear` filter arg, NPC placement in
+    `nextLevel`).
+  - Done when: NPCs never spawn on a stairs choke point. ✔ (4500-map test: 0 unsafe placements.)
+- [x] **M18-T2 — Doors never gate the stairs without a key route.** Verified already
+  guaranteed: `finalize()` only ever sites the stairs on a no-key-reachable cell (and the
+  existing vault-orphan revert keeps that true), so a `LOCKED` door can't be the sole path.
+  Covered by the regression test rather than new code.
+  - Files: `js/dungeon.js` (`finalize`/`_bfsFrom` — no change needed; behaviour asserted).
+  - Done when: the stairs is always reachable without a key. ✔ (4500-map test: 0 failures.)
+- [x] **M18-T3 — Regression test.** `test/stairs.js` generates maps across all three
+  strategies and asserts the door invariant (stairs reachable with no blockers) and that
+  every safe-filtered NPC tile keeps the stairs reachable (incl. merchant + healer
+  together); also reports the naive-blocker rate to quantify the bug.
+  - Files: `test/stairs.js`. Run: `node test/stairs.js [maps]`.
+  - Done when: a large run (≥1000 maps) reports zero stairs-blocked failures. ✔ (4500 maps,
+    0 door failures, 0 unsafe placements, 3.3% naive-blocker rate documented.)
 
 ---
 

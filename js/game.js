@@ -159,18 +159,28 @@ export class Game {
     this.isBossFloor = this.depth % 5 === 0;
     this.npcs = [];
     if (!this.isBossFloor) {
+      // NPCs are non-walkable, so they must never spawn on a tile that seals
+      // off the stairs (tileSafeToBlock); widen the search if the first ring
+      // has no safe cell, and skip the NPC entirely rather than block the run.
+      const safe = (x, y) => this.tileSafeToBlock(x, y);
       if (this.depth % 3 === 0) {
-        const spot = this.findFloorNear(this.dungeon.startPos, 5) || this.dungeon.startPos;
-        const npc = makeNpc("merchant", spot.x, spot.y);
-        npc.wareItems = genWares().map((key) => makeItem(key, 0, 0, this.depth));
-        this.npcs.push(npc);
-        this.log("You spot a merchant's lantern nearby.", "gold");
+        const spot = this.findFloorNear(this.dungeon.startPos, 5, safe) ||
+          this.findFloorNear(this.dungeon.startPos, 10, safe);
+        if (spot) {
+          const npc = makeNpc("merchant", spot.x, spot.y);
+          npc.wareItems = genWares().map((key) => makeItem(key, 0, 0, this.depth));
+          this.npcs.push(npc);
+          this.log("You spot a merchant's lantern nearby.", "gold");
+        }
       }
       if (this.depth % 4 === 0) {
-        const spot = this.findFloorNear(this.dungeon.stairs, 6) || this.dungeon.startPos;
-        const npc = makeNpc("healer", spot.x, spot.y);
-        this.npcs.push(npc);
-        this.log("A healer awaits somewhere on this floor.", "good");
+        const spot = this.findFloorNear(this.dungeon.stairs, 6, safe) ||
+          this.findFloorNear(this.dungeon.startPos, 12, safe);
+        if (spot) {
+          const npc = makeNpc("healer", spot.x, spot.y);
+          this.npcs.push(npc);
+          this.log("A healer awaits somewhere on this floor.", "good");
+        }
       }
     }
 
@@ -227,17 +237,45 @@ export class Game {
     this.recalcStats();
   }
 
-  // Find a free floor cell within `rad` of `pos` (for boss placement).
-  findFloorNear(pos, rad) {
+  // Find a free floor cell within `rad` of `pos`. Optional `filter(x,y)` rejects
+  // candidates (e.g. tiles that would wall off the stairs).
+  findFloorNear(pos, rad, filter = null) {
     const opts = [];
     for (let dy = -rad; dy <= rad; dy++) {
       for (let dx = -rad; dx <= rad; dx++) {
         const x = pos.x + dx, y = pos.y + dy;
         if (x === pos.x && y === pos.y) continue;
-        if (this.dungeon.get(x, y) === FLOOR && !this.monsterAt(x, y)) opts.push({ x, y });
+        if (this.dungeon.get(x, y) === FLOOR && !this.monsterAt(x, y) &&
+            (!filter || filter(x, y))) opts.push({ x, y });
       }
     }
     return opts.length ? opts[Math.floor(rng() * opts.length)] : null;
+  }
+
+  // True if a non-walkable blocker (an NPC) may stand on (x,y) without sealing
+  // the player away from the down-stairs. BFS from startPos over walkable tiles
+  // with (x,y) — and any already-placed NPCs — treated as impassable.
+  tileSafeToBlock(x, y) {
+    const d = this.dungeon;
+    if (!d.inBounds(x, y) || d.get(x, y) !== FLOOR) return false;
+    const start = d.startPos, stairs = d.stairs;
+    if (!stairs) return true;
+    const blocked = new Set([d.idx(x, y)]);
+    for (const n of this.npcs) blocked.add(d.idx(n.x, n.y));
+    const seen = new Set([d.idx(start.x, start.y)]);
+    const q = [start];
+    while (q.length) {
+      const c = q.shift();
+      if (c.x === stairs.x && c.y === stairs.y) return true;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = c.x + dx, ny = c.y + dy, ni = d.idx(nx, ny);
+        if (!d.inBounds(nx, ny) || seen.has(ni) || blocked.has(ni) || !d.isWalkable(nx, ny))
+          continue;
+        seen.add(ni);
+        q.push({ x: nx, y: ny });
+      }
+    }
+    return false;
   }
 
   // ------------------------------------------------------------------- input
