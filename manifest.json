@@ -1,0 +1,15 @@
+{
+  "name": "Catacombs of the Forgotten",
+  "short_name": "Catacombs",
+  "description": "A turn-based pixel-art roguelike. Delve, fight, loot, and recover the Forgotten Relic.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d0c14",
+  "theme_color": "#0d0c14",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

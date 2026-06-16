@@ -33,6 +33,14 @@ const STRIP_DEFS = {
   princess: { url: TT + "Princess_F1.png",                      fw: 16, fh: 20 },
 };
 
+// Every art file the game actually loads, as repo-relative paths. The build
+// script (scripts/build.mjs) and the service worker ship only these — the raw
+// asset packs are huge, so we never bundle the unreferenced files.
+export const ASSET_FILES = [
+  ...Object.values(SHEETS),
+  ...Object.values(STRIP_DEFS).map((d) => d.url),
+];
+
 const images = {};
 export const STRIPS = {};
 

@@ -223,4 +223,16 @@ async function boot() {
   );
 }
 
+// Register the service worker for offline play — but never on localhost, where
+// it would cache modules and defeat the dev port-bump cache-busting workflow.
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  const host = location.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || host === "") return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* offline unsupported; ignore */ });
+  });
+}
+
+registerServiceWorker();
 boot();

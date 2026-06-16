@@ -4,6 +4,10 @@
 
 const LS_KEY = "rl_audio";
 
+// The looping ambience track (the only audio file; SFX are synthesized).
+// Exported so the build script / service worker can ship it.
+export const MUSIC_FILE = "assets/dark_dungeon_ambience.mp3";
+
 class AudioManager {
   constructor() {
     this.ctx = null;
@@ -124,7 +128,7 @@ class AudioManager {
     g.gain.value = 0;
     g.connect(this.musicGain);
 
-    const el = new Audio("assets/dark_dungeon_ambience.mp3");
+    const el = new Audio(MUSIC_FILE);
     el.loop = true;
     const src = this.ctx.createMediaElementSource(el);
     src.connect(g);
