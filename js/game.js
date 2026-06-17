@@ -97,10 +97,12 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- lifecycle
-  start(seed, cls) {
+  // `dailyDate` ("YYYY-MM-DD") tags a run as that day's daily challenge.
+  start(seed, cls, dailyDate) {
     this.seed = seed !== undefined ? seed >>> 0 : (Math.random() * 0x100000000 >>> 0);
     this.seedDisplay = this.seed.toString(16).padStart(8, "0").toUpperCase();
     this.cls = cls !== undefined ? cls : (this.cls || "warrior");
+    this.dailyDate = dailyDate || null;
     this.depth = 0;
     this.player = {
       kind: "player",
@@ -805,6 +807,7 @@ export class Game {
       cause: won ? null : (this.lastHitBy || "the dark"),
       seed: this.seedDisplay,
       ms: Date.now() - this.runStart,
+      daily: this.dailyDate || null,
     };
   }
 
@@ -859,7 +862,9 @@ export class Game {
 
     const stat = (label, value) =>
       `<div class="recap-stat"><span>${label}</span><b>${value}</b></div>`;
-    let html = `<div class="recap-grid">` +
+    let html = run.daily
+      ? `<div class="recap-daily">⚑ Daily Challenge · ${run.daily}</div>` : "";
+    html += `<div class="recap-grid">` +
       stat("Class", clsName) +
       stat("Depth", run.depth) +
       stat("Level", run.level) +
@@ -2203,6 +2208,12 @@ export function showOverlay(title, text, btnLabel, onClick) {
   // Recap is opt-in; callers that want it (death/win) populate it afterward.
   const recap = document.getElementById("overlay-recap");
   if (recap) { recap.innerHTML = ""; recap.classList.add("hidden"); }
+  // The Daily Run button + board belong only to the title screen (re-shown by
+  // boot()); hide them on death/win overlays.
+  const btn2 = document.getElementById("overlay-btn2");
+  if (btn2) btn2.classList.add("hidden");
+  const board = document.getElementById("daily-board");
+  if (board) { board.innerHTML = ""; board.classList.add("hidden"); }
   const btn = document.getElementById("overlay-btn");
   btn.textContent = btnLabel;
   const handler = () => {

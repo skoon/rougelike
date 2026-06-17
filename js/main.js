@@ -3,8 +3,12 @@
 import { loadAssets } from "./assets.js";
 import { Game, showOverlay, DEFAULT_KEYS, KEY_ACTIONS } from "./game.js";
 import { audio } from "./audio.js";
-import { getBest, getUnlocks } from "./scores.js";
+import { getBest, getUnlocks, getDailyRuns } from "./scores.js";
 import { hashSeed } from "./rng.js";
+
+// Today's date in UTC ("YYYY-MM-DD") so the daily seed is the same worldwide.
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const dailySeedFor = (date) => hashSeed("daily-" + date);
 
 function parseSeed(raw) {
   if (!raw) return undefined;
@@ -180,47 +184,73 @@ async function boot() {
 
   const seedRow = document.getElementById("seed-row");
   const seedInput = document.getElementById("seed-input");
+  const overlay = document.getElementById("overlay");
+  const dailyBtn = document.getElementById("overlay-btn2");
+  const dailyBoard = document.getElementById("daily-board");
+  const classPanel = document.getElementById("class-panel");
   seedRow.classList.remove("hidden");
 
-  const classPanel = document.getElementById("class-panel");
+  // Reveal the class picker, then start the chosen class with `seed`. `dailyDate`
+  // (or null) tags the run as that day's daily challenge.
+  const chooseClass = (seed, dailyDate) => {
+    seedRow.classList.add("hidden");
+    classPanel.classList.remove("hidden");
+
+    // Restore original text before annotating (prevents duplication on repeat shows).
+    classPanel.querySelectorAll(".cls-perk, .cls-kit").forEach((el) => {
+      if (!el.dataset.orig) el.dataset.orig = el.textContent;
+      else el.textContent = el.dataset.orig;
+    });
+
+    // Annotate unlocked perks.
+    const u = getUnlocks();
+    const annot = (sel, txt) => {
+      const el = classPanel.querySelector(sel);
+      if (el) el.textContent += txt;
+    };
+    if (u.hardened)    annot("[data-cls=warrior] .cls-perk", " (+5 HP)");
+    if (u.shadowcraft) annot("[data-cls=rogue] .cls-perk",   " (40%)");
+    if (u.archmage)    annot("[data-cls=mage] .cls-perk",    " (+1 potion)");
+    if (u.veteran)
+      classPanel.querySelectorAll(".cls-kit")
+        .forEach((el) => { el.textContent += " + bonus potion."; });
+
+    classPanel.querySelectorAll(".cls-btn").forEach((btn) => {
+      btn.onclick = () => {
+        const cls = btn.closest(".cls-opt").dataset.cls;
+        classPanel.classList.add("hidden");
+        game.start(seed, cls, dailyDate);
+      };
+    });
+  };
 
   showOverlay(
     "Catacombs of the Forgotten",
     `Delve as deep as you dare. Bump into foes to attack, grab loot, and find the stairs to descend. Death is permanent.${bestLine}`,
     "Enter the Catacombs",
-    () => {
-      seedRow.classList.add("hidden");
-      const chosenSeed = parseSeed(seedInput.value.trim());
-      classPanel.classList.remove("hidden");
-
-      // Restore original text before annotating (prevents duplication on repeat shows).
-      classPanel.querySelectorAll(".cls-perk, .cls-kit").forEach((el) => {
-        if (!el.dataset.orig) el.dataset.orig = el.textContent;
-        else el.textContent = el.dataset.orig;
-      });
-
-      // Annotate unlocked perks.
-      const u = getUnlocks();
-      const annot = (sel, txt) => {
-        const el = classPanel.querySelector(sel);
-        if (el) el.textContent += txt;
-      };
-      if (u.hardened)    annot("[data-cls=warrior] .cls-perk", " (+5 HP)");
-      if (u.shadowcraft) annot("[data-cls=rogue] .cls-perk",   " (40%)");
-      if (u.archmage)    annot("[data-cls=mage] .cls-perk",    " (+1 potion)");
-      if (u.veteran)
-        classPanel.querySelectorAll(".cls-kit")
-          .forEach((el) => { el.textContent += " + bonus potion."; });
-
-      classPanel.querySelectorAll(".cls-btn").forEach((btn) => {
-        btn.onclick = () => {
-          const cls = btn.closest(".cls-opt").dataset.cls;
-          classPanel.classList.add("hidden");
-          game.start(chosenSeed, cls);
-        };
-      });
-    }
+    () => chooseClass(parseSeed(seedInput.value.trim()), null)
   );
+
+  // showOverlay hides the daily controls; the title screen re-enables them.
+  const date = todayStr();
+  dailyBtn.classList.remove("hidden");
+  dailyBtn.onclick = () => {
+    overlay.classList.add("hidden");
+    chooseClass(dailySeedFor(date), date);
+  };
+
+  // Today's daily attempts (this device), best first.
+  const dRuns = getDailyRuns(date);
+  if (dRuns.length) {
+    const best = dRuns.reduce((a, b) =>
+      (b.depth > a.depth || (b.depth === a.depth && b.gold > a.gold)) ? b : a);
+    dailyBoard.classList.remove("hidden");
+    dailyBoard.innerHTML =
+      `<div class="db-head">Today's daily · ${date} · ${dRuns.length} run${dRuns.length > 1 ? "s" : ""}</div>` +
+      `<div class="db-best">Best: depth ${best.depth} · Lv ${best.level} · ${best.gold}g${best.won ? " ★ escaped!" : ""}</div>`;
+  } else {
+    dailyBoard.classList.add("hidden");
+  }
 }
 
 // Register the service worker for offline play — but never on localhost, where

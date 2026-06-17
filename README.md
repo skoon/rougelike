@@ -42,8 +42,9 @@ movement/wait/inventory/pause keys. All settings persist across sessions.
 - Three classes (Warrior / Rogue / Mage) with distinct stats, kits, perks, and two
   activated abilities each (Q / E, on cooldowns): Warrior Cleave/Brace, Rogue
   Dash/Smoke, Mage Firebolt/Frost Nova. Plus meta unlocks earned across runs, optional
-  seeded runs (enter a seed on the title screen), and locally-persisted high scores and
-  run history.
+  seeded runs (enter a seed on the title screen), a **Daily Run** (a fixed, date-seeded
+  dungeon that's the same for everyone each day, with a today's-best board), and
+  locally-persisted high scores and run history.
 - Win by recovering the Forgotten Relic from depth 10 — or die trying. Death is
   permanent.
 - Special rooms: locked treasure vaults (find the key), monster nests, and shrines

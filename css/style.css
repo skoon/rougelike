@@ -356,6 +356,50 @@ canvas#game {
 }
 #overlay-btn:hover { filter: brightness(1.1); }
 
+#overlay-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+#overlay-btn2 {
+  font: inherit;
+  font-size: 15px;
+  padding: 10px 22px;
+  cursor: pointer;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+}
+#overlay-btn2:hover { background: rgba(217, 142, 58, 0.15); }
+#overlay-btn2.hidden { display: none; }
+
+#daily-board {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#daily-board.hidden { display: none; }
+#daily-board .db-head {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 11px;
+  color: var(--accent);
+}
+#daily-board .db-best { color: var(--ink); margin-top: 2px; }
+
+.recap-daily {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: var(--accent);
+  text-align: center;
+}
+
 #log {
   height: 96px;
   overflow-y: auto;

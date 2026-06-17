@@ -35,6 +35,11 @@ export function getHistory() {
   return load().history;
 }
 
+// Runs tagged with the given daily date ("YYYY-MM-DD"), newest first.
+export function getDailyRuns(date) {
+  return load().history.filter((r) => r.daily === date);
+}
+
 // Update lifetime meta stats at run end; returns the updated meta object.
 export function updateMeta(depth, kills, won) {
   const m = loadMeta();

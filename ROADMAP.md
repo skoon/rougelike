@@ -132,7 +132,7 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
         → M18 [done] → M10 [done] → M11 [done]       ← make it a RELEASED game
-        → M12 [done] → M13 → M14 → M15 → M16 → M17   ← post-1.0 depth & replayability
+        → M12 [done] → M15 [done] → M13 → M14 → M16 → M17  ← post-1.0 depth & replayability
 ```
 
 **M18 [done]** fixed the release-blocking bug where NPCs could seal the stairs.
@@ -582,27 +582,29 @@ cursed (locked on, hidden malus) in exchange for a strong bonus.
     cursed gear; curse reveal log + tint).
   - Done when: cursed gear sticks until cleansed and the trade-off is legible to the player.
 
-### M15 — Daily challenge & leaderboard
+### M15 — Daily challenge & leaderboard  *(DONE)*
 **Goal:** a shared, fixed-seed run per day for competition and replay. Leans entirely on
 the existing seeded PRNG and run-history persistence.
 
-> Context: `seedRng`/`hashSeed` (`js/rng.js`); `Game.start(seed, cls)` already accepts a
-> seed; `saveRun`/`getHistory`/`getBest` (`js/scores.js`) persist runs; the title overlay
-> (`js/main.js`) already has a seed input + class select.
+> Implemented: a "Daily Run" button (`#overlay-btn2`) on the title overlay starts a run
+> seeded by `hashSeed("daily-" + UTC-YYYY-MM-DD)` — deterministic worldwide and stable on
+> replay. `Game.start(seed, cls, dailyDate)` records `this.dailyDate`; `buildRun` tags the
+> saved run with `daily`. `scores.getDailyRuns(date)` powers a "Today's daily" board on the
+> title (run count + best depth/Lv/gold) and a daily badge on the death/win recap. Verified
+> live: both title buttons, daily board renders from persisted data, deterministic seed
+> (Node-checked), clean boot.
 
-- [ ] **M15-T1 — Daily seed.** Derive a deterministic seed from the UTC date
-    (`hashSeed("YYYY-MM-DD")`); a "Daily Run" button on the title overlay starts it.
-  - Files: `js/main.js` (button + date→seed), `js/game.js` (`start` with the daily seed,
-    a `this.daily` flag).
-  - Done when: everyone gets the same dungeon on a given day; replaying the same day is
-    identical.
-- [ ] **M15-T2 — Daily board + lockout.** Tag runs `daily:"YYYY-MM-DD"` in `saveRun`; a
-    "Today's runs" list (best depth/gold) in the recap/title; optionally one scored
-    attempt per day.
-  - Files: `js/scores.js` (filter helpers), `js/game.js` `renderRecap` (daily section).
-  - Done when: daily attempts are listed and ranked locally, separate from normal runs.
-  - Note: a real cross-player leaderboard needs a tiny backend — out of scope here; keep
-    the data shape ready for it.
+- [x] **M15-T1 — Daily seed.** UTC-date seed via `hashSeed("daily-"+date)`; "Daily Run"
+  button → class select → `game.start(dailySeed, cls, date)`. Same dungeon for everyone on
+  a given day; identical on replay.
+  - Files: `js/main.js` (button, `chooseClass` refactor, date→seed), `js/game.js`
+    (`start` `dailyDate`), `index.html`/`css` (button + board).
+- [x] **M15-T2 — Daily board.** Runs tagged `daily:"YYYY-MM-DD"` in `buildRun`/`saveRun`;
+  `getDailyRuns` filter; "Today's daily" board on the title + daily badge in `renderRecap`.
+  - Files: `js/scores.js` (`getDailyRuns`), `js/game.js` (`buildRun`, recap badge),
+    `js/main.js` (title board).
+  - No hard lockout (a local game shouldn't bar replays); attempts are listed and the best
+    is highlighted. Data shape (`daily` field) is ready for a future cross-player backend.
 
 ### M16 — Resource clock: torchlight & rations
 **Goal:** add forward pressure so a floor isn't a pure puzzle. A depleting light/food
