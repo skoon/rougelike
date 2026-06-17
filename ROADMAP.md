@@ -131,7 +131,7 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M1 [done] → M4 [done]                     ← add DEPTH
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
-        → M18 [done] → M10 [done] → M11 (ship it)    ← make it a RELEASED game
+        → M18 [done] → M10 [done] → M11 [done]       ← make it a RELEASED game
         → M12 → M13 → M14 → M15 → M16 → M17          ← post-1.0 depth & replayability
 ```
 
@@ -487,16 +487,22 @@ screen: animated objects, real NPC sprites, animated monsters.
     `addShake`/`tickStatuses`/heal), `js/main.js` (`applyReadability` + controls),
     `index.html`, `css/style.css` (`body.cb`, `--game-width`).
 
-### M11 — Packaging & release
+### M11 — Packaging & release  *(DONE)*
 **Goal:** something people can play without cloning a repo.
 
-- [ ] **M11-T1 — itch.io build.** Script (`build.ps1` or npm-free Node script) that zips
-  `index.html + css + js + only the asset files actually loaded` (the packs are huge —
-  ship only what `assets.js`/`audio.js` reference).
-- [ ] **M11-T2 — PWA / offline.** `manifest.json` + tiny service worker precaching the
-  same file list; favicon + social meta tags.
-- [ ] **M11-T3 — README & screenshots.** Hero GIF/screenshots, controls, credits section
-  for Kenney / Tiny Dungeons / Tiny Tales licenses.
+- [x] **M11-T1 — itch.io build.** `scripts/build.mjs` (dependency-free Node) assembles
+  `dist/` + a zip from `index.html` + `css/` + `js/` + only the loaded asset files
+  (~2.7 MB vs. the raw packs' hundreds of MB). `ASSET_FILES` (assets.js) + `MUSIC_FILE`
+  (audio.js) are the single source of truth; the build errors if a referenced asset is
+  missing. Verified: 20 files bundled, zip produced.
+- [x] **M11-T2 — PWA / offline.** `manifest.json` + `sw.js` (shell precache + cache-first
+  runtime caching); generated `icon-192/512.png`, `favicon.png/.ico`; theme-color + OG/
+  social meta in `index.html`. SW registers only off-localhost (keeps the dev port-bump
+  cache-busting working). Verified booting clean; manifest/icons load 200.
+- [x] **M11-T3 — README & credits.** README gained Build & deploy + Credits sections
+  (Kenney CC0 / Tiny Dungeons by Roupiks / Tiny Tales by Megatiles–Rayane Félix, per the
+  packs' `License.txt`). Gameplay screenshots left for a manual capture (the canvas→file
+  bridge wasn't worth the cost); the app icon doubles as the marketing image.
 
 ---
 

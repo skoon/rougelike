@@ -81,3 +81,36 @@ movement/wait/inventory/pause keys. All settings persist across sessions.
 | `js/scores.js`    | Run history, high scores, lifetime meta, unlocks.         |
 | `js/game.js`      | Game state, turn loop, combat, rendering, input, HUD.     |
 | `js/main.js`      | Bootstrap: load assets, title screen, settings, start.    |
+
+## Build & deploy
+
+```sh
+node scripts/build.mjs
+```
+
+This assembles a `dist/` folder (and a zip) containing `index.html`, `css/`, `js/`,
+and **only the asset files the game actually loads** — a few hundred KB instead of the
+raw multi-hundred-MB packs. Upload the zip to [itch.io](https://itch.io) as an HTML5
+game (set `index.html` as the entry point), or serve `dist/` from any static host.
+
+The game is also an installable PWA: `manifest.json` + a service worker (`sw.js`)
+precache the shell and runtime-cache assets, so it works offline after one visit.
+(The service worker is intentionally **not** registered on `localhost`, so local
+development still picks up edits immediately.)
+
+## Credits
+
+Code by the project author. Art and audio assets remain the property of their
+creators — see each pack's `License.txt` under `assets/`:
+
+- **Kenney Roguelike packs** (Dungeon, Characters) — [kenney.nl](https://kenney.nl/),
+  released under **CC0** (public domain).
+- **Tiny Dungeons – Biome Dungeon Pack** (animated objects & monsters) — by
+  **Roupiks**, [roupiks.itch.io](https://roupiks.itch.io/). Free for commercial and
+  non-commercial use; redistribution/resale of the assets is not permitted.
+- **Tiny Tales – Human NPC Nobility** (merchant & healer sprites) — by **Megatiles**,
+  artist **Rayane Félix**. Free for commercial and non-commercial use;
+  redistribution/resale of the assets is not permitted.
+
+The ambient track (`assets/dark_dungeon_ambience.mp3`) and the app icon are used
+under their respective terms. All in-game SFX are synthesized at runtime (no files).
