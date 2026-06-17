@@ -22,7 +22,7 @@ const STRIP_DEFS = {
   pot2:     { url: TD + "objects_animated/dungeon_pot_02.png",  fw: 32, fh: 32 },
   pot3:     { url: TD + "objects_animated/dungeon_pot_03.png",  fw: 32, fh: 32 },
   pot4:     { url: TD + "objects_animated/dungeon_pot_04.png",  fw: 32, fh: 32 },
-  brazier:  { url: TD + "objects_animated/dungeon_brazier.png", fw: 32, fh: 32 },
+  brazier:  { url: TD + "objects_animated/dungeon_brazier.png", fw: 16, fh: 32 },
   lever:    { url: TD + "objects_animated/dungeon_lever.png",   fw: 32, fh: 32 },
   gate:     { url: TD + "objects_animated/dungeon_gate.png",    fw: 32, fh: 32 },
   spikes:   { url: TD + "objects_animated/dungeon_spikes.png",  fw: 32, fh: 32 },
