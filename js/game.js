@@ -24,11 +24,12 @@ const WIN_DEPTH = 10; // depth where the win artifact spawns
 export const DEFAULT_KEYS = {
   up: "w", down: "s", left: "a", right: "d",
   wait: " ", inventory: "i", pause: "p",
+  ability1: "q", ability2: "e",
 };
 export const KEY_ACTIONS = [
   ["up", "Move up"], ["down", "Move down"], ["left", "Move left"],
   ["right", "Move right"], ["wait", "Wait"], ["inventory", "Inventory"],
-  ["pause", "Pause"],
+  ["ability1", "Ability 1"], ["ability2", "Ability 2"], ["pause", "Pause"],
 ];
 
 // Depth themes: each picks a generation strategy and a tile palette
@@ -118,11 +119,15 @@ export class Game {
       gold: 0,
       keys: 0,
       statuses: [],
+      cooldowns: {},   // ability id -> turn number when usable again
       alive: true,
     };
     this.applyClass();  // overrides hp/atk/def and adds starting kit
     this.runKills = 0;
     this.runStart = Date.now();
+    this.turnCount = 0;       // player turns elapsed (drives ability cooldowns)
+    this.braceUntil = -1;     // turn until which Brace halves incoming damage
+    this.smokeUntil = -1;     // turn until which Smoke hides the player from foes
     this.lastHitBy = null; // cause of the player's most recent damage
     this.messages = [];
     this.effects = [];
@@ -337,6 +342,10 @@ export class Game {
         return;
       }
 
+      // Class abilities (Q / E by default).
+      if (action === "ability1") { e.preventDefault(); this.useAbilitySlot(0); return; }
+      if (action === "ability2") { e.preventDefault(); this.useAbilitySlot(1); return; }
+
       let dx = 0, dy = 0;
       if (action === "up") dy = -1;
       else if (action === "down") dy = 1;
@@ -522,6 +531,7 @@ export class Game {
   // alternating turns while the player is slowed), then statuses tick.
   worldTurn() {
     const p = this.player;
+    this.turnCount++; // drives ability cooldowns
     this.enemyTurn();
     if (p.alive && this.hasStatus(p, "slow")) {
       this.slowTick = !this.slowTick;
@@ -594,6 +604,9 @@ export class Game {
       const sees = this.dungeon.visible[this.dungeon.idx(m.x, m.y)];
       const dist = Math.abs(m.x - p.x) + Math.abs(m.y - p.y);
       if (!sees || dist > FOV_RADIUS + 2) continue;
+
+      // Rogue's Smoke: non-adjacent foes lose track of the player.
+      if (this.turnCount <= this.smokeUntil && dist > 1) continue;
 
       // Fleeing creatures retreat once badly wounded.
       if (m.flees && m.hp / m.maxHp < 0.3) {
@@ -714,6 +727,8 @@ export class Game {
       if (cause) this.lastHitBy = cause;
     }
     if (isPlayer && this.cls === "warrior") dmg = Math.max(1, dmg - 1);
+    // Warrior's Brace halves incoming damage until the next turn.
+    if (isPlayer && this.turnCount <= this.braceUntil) dmg = Math.max(1, Math.floor(dmg / 2));
     target.hp -= dmg;
     target.flashUntil = this.now + 130;
     this.spawnDamage(target.rx, target.ry, dmg, color || (isPlayer ? "#ff6b5e" : "#ffe6a8"));
@@ -971,6 +986,138 @@ export class Game {
     this.updateHud();
   }
 
+  // ----------------------------------------------------------- abilities
+  // Alive monsters orthogonally adjacent to the player.
+  adjacentMonsters() {
+    const p = this.player, out = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const m = this.monsterAt(p.x + dx, p.y + dy);
+      if (m) out.push(m);
+    }
+    return out;
+  }
+
+  // Nearest visible alive monster within `range` (Manhattan); optionally needs
+  // line of sight.
+  nearestVisibleMonster(range, requireLos = false) {
+    const p = this.player, d = this.dungeon;
+    let best = null, bd = Infinity;
+    for (const m of this.monsters) {
+      if (!m.alive) continue;
+      const dist = Math.abs(m.x - p.x) + Math.abs(m.y - p.y);
+      if (dist > range) continue;
+      if (!d.visible[d.idx(m.x, m.y)]) continue;
+      if (requireLos && !d.lineOfSight(p.x, p.y, m.x, m.y)) continue;
+      if (dist < bd) { bd = dist; best = m; }
+    }
+    return best;
+  }
+
+  // Use the ability in class slot n (0 = Q, 1 = E). Costs a turn + cooldown
+  // only if it actually fires (abilities needing a target can no-op).
+  useAbilitySlot(n) {
+    if (this.over || this.shopOpen || this.paused) return;
+    if (performance.now() < this.busyUntil) return;
+    const cls = CLASSES[this.cls];
+    const ability = cls && cls.abilities && cls.abilities[n];
+    if (!ability) return;
+    const ready = this.player.cooldowns[ability.id] || 0;
+    if (this.turnCount < ready) {
+      const left = ready - this.turnCount;
+      this.log(`${ability.name} is recharging (${left} turn${left > 1 ? "s" : ""}).`, "dim");
+      return;
+    }
+    this.autoPath = null;
+    if (!this.useAbility(ability)) return; // couldn't fire — no turn, no cooldown
+    this.player.cooldowns[ability.id] = this.turnCount + ability.cd + 1;
+    this.afterAction();
+  }
+
+  // Dispatch an ability by id. Returns true if it fired (consumes a turn).
+  useAbility(ability) {
+    const p = this.player;
+    switch (ability.id) {
+      case "cleave": {
+        const targets = this.adjacentMonsters();
+        if (!targets.length) { this.log("No foe within reach to cleave.", "dim"); return false; }
+        this.log("You sweep your weapon in a wide arc!", "good");
+        audio.swing();
+        this.addShake(3, 150);
+        for (const m of targets) this.attack(p, m);
+        return true;
+      }
+      case "brace": {
+        this.braceUntil = this.turnCount + 1; // covers the coming enemy turn
+        this.log("You raise your guard, bracing for impact.", "good");
+        audio.swing();
+        this.spawnParticles(p.rx, p.ry, "#9aa6b8", 8, true);
+        return true;
+      }
+      case "dash": {
+        const target = this.nearestVisibleMonster(ability.range);
+        if (!target) { this.log("No foe in sight to dash to.", "dim"); return false; }
+        const spots = [];
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const x = target.x + dx, y = target.y + dy;
+          if (this.dungeon.isWalkable(x, y) && !this.monsterAt(x, y) && !this.npcAt(x, y))
+            spots.push({ x, y });
+        }
+        if (!spots.length) { this.log("No room to dash beside your quarry.", "dim"); return false; }
+        spots.sort((a, b) =>
+          (Math.abs(a.x - p.x) + Math.abs(a.y - p.y)) - (Math.abs(b.x - p.x) + Math.abs(b.y - p.y)));
+        const dest = spots[0];
+        this.spawnParticles(p.rx, p.ry, "#cfcfe6", 12);
+        p.x = dest.x; p.y = dest.y; p.rx = dest.x; p.ry = dest.y; // blink (no tween)
+        if (dest.x !== target.x) p.facing = target.x > dest.x ? 1 : -1;
+        this.log("You dash through the shadows!", "good");
+        audio.swing();
+        const dmg = this.rollDamage(p, target) * 2;
+        this.log(`Backstab! You hit the ${target.name} for ${dmg}.`, "good");
+        audio.hit();
+        this.damageActor(target, dmg);
+        return true;
+      }
+      case "smoke": {
+        this.smokeUntil = this.turnCount + 3;
+        this.log("You vanish in a cloud of smoke.", "good");
+        audio.descend();
+        this.spawnParticles(p.rx, p.ry, "#b8b8c8", 22, true);
+        return true;
+      }
+      case "firebolt": {
+        const target = this.nearestVisibleMonster(ability.range, true);
+        if (!target) { this.log("No clear target for your firebolt.", "dim"); return false; }
+        p.facing = target.x >= p.x ? 1 : -1;
+        this.effects.push({
+          type: "bolt", color: "#ff8c2a",
+          x0: p.rx + 0.5, y0: p.ry + 0.5, x1: target.rx + 0.5, y1: target.ry + 0.5,
+          start: this.now, dur: 200,
+        });
+        const dmg = this.rollDamage(p, target) + 4; // fire bonus
+        this.log(`Your firebolt scorches the ${target.name} for ${dmg}.`, "good");
+        audio.hit();
+        this.damageActor(target, dmg);
+        this.spawnParticles(target.rx, target.ry, "#ff8c2a", 10);
+        return true;
+      }
+      case "frostnova": {
+        const targets = this.adjacentMonsters();
+        if (!targets.length) { this.log("No foe close enough to freeze.", "dim"); return false; }
+        this.log("You unleash a burst of frost!", "good");
+        audio.potion();
+        this.addShake(2, 150);
+        for (const m of targets) {
+          this.applyStatus(m, "slow", 3, 0);
+          this.damageActor(m, Math.max(1, this.rollDamage(p, m) - 1), this.palette("slow"));
+        }
+        this.spawnParticles(p.rx, p.ry, this.palette("slow"), 16);
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
   // ----------------------------------------------------------- inventory UI
   toggleInventory() {
     const panel = document.getElementById("inventory-panel");
@@ -1042,6 +1189,18 @@ export class Game {
     const p = this.player;
     const hpPct = Math.max(0, (p.hp / p.maxHp) * 100);
     const xpPct = (p.xp / p.xpNext) * 100;
+
+    // Ability cooldown chips (key + name + ● ready / N turns left).
+    const keyLabel = (k) => k === " " ? "Spc" : (k || "?").toUpperCase();
+    const abilities = CLASSES[this.cls]?.abilities || [];
+    const abilityHud = abilities.map((a, i) => {
+      const key = keyLabel(this.keymap[i === 0 ? "ability1" : "ability2"]);
+      const left = (p.cooldowns[a.id] || 0) - this.turnCount;
+      const ready = left <= 0;
+      return `<span class="stat ability ${ready ? "ready" : "cooling"}">` +
+        `<em>${key}</em> ${a.short} ${ready ? "●" : left}</span>`;
+    }).join("");
+
     this.statsEl.innerHTML = `
       <span class="stat bar">HP
         <span class="track"><span class="fill hp" style="width:${hpPct}%"></span></span>
@@ -1055,6 +1214,7 @@ export class Game {
       <span class="stat">Gold <b>${p.gold}</b></span>
       ${p.keys > 0 ? `<span class="stat">Keys <b>${p.keys}</b></span>` : ""}
       <span class="stat">Depth <b>${this.depth}</b></span>
+      ${abilityHud}
       ${p.statuses.map((s) => `<span class="stat status-${s.type}">${s.type} <b>${s.turns}</b></span>`).join("")}`;
   }
 

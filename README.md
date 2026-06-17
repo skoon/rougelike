@@ -39,9 +39,11 @@ movement/wait/inventory/pause keys. All settings persist across sessions.
   cellular-automata caves) selected by depth-themed biomes (Crypt → Catacombs →
   Caverns → Sunken Depths), each with its own wall/floor palette and fog. Every
   floor is guaranteed fully connected with reachable stairs.
-- Three classes (Warrior / Rogue / Mage) with distinct stats, kits, and perks, plus
-  meta unlocks earned across runs. Optional seeded runs (enter a seed on the title
-  screen); high scores and run history persist locally.
+- Three classes (Warrior / Rogue / Mage) with distinct stats, kits, perks, and two
+  activated abilities each (Q / E, on cooldowns): Warrior Cleave/Brace, Rogue
+  Dash/Smoke, Mage Firebolt/Frost Nova. Plus meta unlocks earned across runs, optional
+  seeded runs (enter a seed on the title screen), and locally-persisted high scores and
+  run history.
 - Win by recovering the Forgotten Relic from depth 10 — or die trying. Death is
   permanent.
 - Special rooms: locked treasure vaults (find the key), monster nests, and shrines

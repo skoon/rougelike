@@ -104,25 +104,40 @@ export function makeBoss(x, y, depth) {
   return m;
 }
 
-// Playable class definitions. Starting stats + kit + perk description.
+// Playable class definitions. Starting stats + kit + perk + two activated
+// abilities (slot 0 = key Q, slot 1 = key E). Each ability: { id, name, cd
+// (turn cooldown), range?, short (HUD label) }. Behaviour lives in
+// Game.useAbility (js/game.js), dispatched on `id`.
 export const CLASSES = {
   warrior: {
     name: "Warrior",
     hp: 40, atk: 6, def: 2,
     kit: "Starts with chainmail armor.",
     perk: "Toughness: take 1 less damage from every hit.",
+    abilities: [
+      { id: "cleave", name: "Cleave", short: "Cleave", cd: 4, desc: "Strike all adjacent foes." },
+      { id: "brace",  name: "Brace",  short: "Brace",  cd: 5, desc: "Halve damage until your next turn." },
+    ],
   },
   rogue: {
     name: "Rogue",
     hp: 25, atk: 8, def: 0,
     kit: "Starts with a short sword.",
     perk: "Backstab: 30% chance to deal double damage.",
+    abilities: [
+      { id: "dash",  name: "Dash",  short: "Dash",  cd: 4, range: 4, desc: "Leap to a foe and backstab." },
+      { id: "smoke", name: "Smoke", short: "Smoke", cd: 6, desc: "Vanish — foes lose track of you." },
+    ],
   },
   mage: {
     name: "Mage",
     hp: 22, atk: 4, def: 0,
     kit: "Starts with 3 healing potions.",
     perk: "Arcane: healing potions restore full HP.",
+    abilities: [
+      { id: "firebolt",  name: "Firebolt",   short: "Firebolt", cd: 2, range: 6, desc: "Hurl a bolt of fire." },
+      { id: "frostnova", name: "Frost Nova", short: "Frost",    cd: 5, desc: "Slow all adjacent foes." },
+    ],
   },
 };
 

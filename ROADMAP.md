@@ -132,7 +132,7 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
         → M18 [done] → M10 [done] → M11 [done]       ← make it a RELEASED game
-        → M12 → M13 → M14 → M15 → M16 → M17          ← post-1.0 depth & replayability
+        → M12 [done] → M13 → M14 → M15 → M16 → M17   ← post-1.0 depth & replayability
 ```
 
 **M18 [done]** fixed the release-blocking bug where NPCs could seal the stairs.
@@ -513,38 +513,30 @@ Part 3 (**Files** / **Approach** / **Done when**).
 
 ---
 
-### M12 — Active class abilities
-**Goal:** turn the three stat profiles into three real playstyles. Combat is currently
-pure bump-attack; the Mage doesn't even have a ranged option despite the fantasy. Give
-each class activated abilities on a turn-cooldown, fired from new hotkeys.
+### M12 — Active class abilities  *(DONE)*
+**Goal:** turn the three stat profiles into three real playstyles. Combat was pure
+bump-attack; the Mage now has the ranged option its fantasy implied. Each class has two
+activated abilities on a turn-cooldown, fired from Q / E (rebindable).
 
-> Context: `CLASSES` (`js/entities.js`) defines stats/kit/perk per class. Combat lives in
-> `Game.attack`/`rangedAttack`/`damageActor` (`js/game.js`); `rangedAttack` already emits a
-> travelling "bolt" `effects` entry, and `findPath`/`lineOfSight` (`js/pathfind.js`,
-> `js/dungeon.js`) exist for targeting. Turn pacing is gated by `busyUntil`/`afterAction`.
+> Implemented: `CLASSES[*].abilities` data (`js/entities.js`); `ability1`/`ability2`
+> actions in `DEFAULT_KEYS`/`KEY_ACTIONS` (default q/e, flow through the M10 rebind UI);
+> `useAbilitySlot`/`useAbility` dispatch in `js/game.js`. Turn/cooldown bookkeeping via
+> `turnCount` (incremented in `worldTurn`) and `player.cooldowns[id]`; abilities that need
+> a target no-op (no turn, no cooldown) instead of whiffing. HUD shows each ability as
+> `KEY Name ●` (ready) or `KEY Name N` (turns left). Verified live: cooldown lifecycle
+> (fire → set → tick down → "recharging" no-op), key handling, no-target no-op, clean boot.
 
-- [ ] **M12-T1 — Ability framework + cooldowns.** Per-class `abilities` data, an
-  `useAbility(slot)` path, and per-turn cooldown bookkeeping.
-  - Files: `js/entities.js` (`CLASSES[*].abilities = [{ name, cd, range, … }]`),
-    `js/game.js` (`useAbility`, cooldown tick in `worldTurn`, key handling in `bindInput`
-    for two new actions), `js/game.js` `DEFAULT_KEYS`/`KEY_ACTIONS` (e.g. `ability1`/
-    `ability2`, default `q`/`e`; flows through the M10 rebind UI for free).
-  - Approach: model an ability like a consumable — it costs a turn via `afterAction`,
-    sets a `cooldownUntilTurn` on the player keyed by slot; block use while on cooldown.
-  - Done when: pressing the ability key spends a turn, triggers the effect, and enters a
-    visible cooldown; rebinding the ability keys works.
-- [ ] **M12-T2 — The six abilities.** Warrior: **Cleave** (hit all adjacent foes) +
-    **Brace** (skip a turn, halve next damage). Rogue: **Dash** (blink up to N tiles in a
-    facing, free backstab on arrival) + **Smoke** (break line-of-sight, foes lose you).
-    Mage: **Firebolt** (player-sourced `rangedAttack`, burns) + **Frost Nova** (slow all
-    adjacent).
-  - Files: `js/game.js` (one handler per ability, reusing `attack`/`rangedAttack`/
-    `applyStatus`/`spawnParticles`/the bolt `effects`), `js/entities.js` (ability data).
-  - Done when: each class's two abilities work and read distinctly in play.
-- [ ] **M12-T3 — Ability HUD + telegraph.** Cooldown indicators next to the status chips;
-    a faint targeting hint for ranged/area abilities.
-  - Files: `js/game.js` `updateHud` (cooldown pips), optional `render` overlay for range.
-  - Done when: the player can see which abilities are ready at a glance.
+- [x] **M12-T1 — Ability framework + cooldowns.** `useAbilitySlot(n)`/`useAbility(ability)`;
+  `turnCount` drives `player.cooldowns[id]`; two rebindable keys. Verified live.
+- [x] **M12-T2 — The six abilities.** Warrior **Cleave** (hit all adjacent) + **Brace**
+  (halve incoming damage until next turn, via `braceUntil` in `damageActor`). Rogue
+  **Dash** (blink beside the nearest visible foe + guaranteed backstab) + **Smoke**
+  (`smokeUntil`; non-adjacent foes lose track in `enemyTurn`). Mage **Firebolt**
+  (player-sourced bolt at nearest LOS foe, +4 fire) + **Frost Nova** (slow + chip all
+  adjacent). Reuses `attack`/`rollDamage`/`applyStatus`/`spawnParticles`/bolt effects.
+- [x] **M12-T3 — Ability HUD.** Cooldown chips in `updateHud` (ready ● / N turns), styled
+  `.ability.ready`/`.cooling`; Q/E hint in the help footer. (A render-time range telegraph
+  was deemed unnecessary — abilities auto-target the nearest valid foe.)
 
 ### M13 — Item depth: scrolls, wands & rings
 **Goal:** loot beyond gold / potion / weapon / armor / shield. Add consumable **scrolls**,

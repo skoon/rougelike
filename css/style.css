@@ -77,6 +77,10 @@ body.cb #stats .status-slow b { color: #ffe14d; }
 
 #stats .stat { color: var(--muted); }
 #stats .stat b { color: var(--ink); }
+#stats .ability em { font-style: normal; font-weight: bold; opacity: 0.85; }
+#stats .ability.ready { color: var(--accent); }
+#stats .ability.cooling { color: var(--muted); }
+
 #stats .status-poison { color: #7dd65a; }
 #stats .status-poison b { color: #7dd65a; }
 #stats .status-bleed { color: #ff6b5e; }
