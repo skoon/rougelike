@@ -176,6 +176,7 @@ export class Game {
         if (spot) {
           const npc = makeNpc("merchant", spot.x, spot.y);
           npc.wareItems = genWares().map((key) => makeItem(key, 0, 0, this.depth));
+          npc.gold = 40 + this.depth * 15; // finite purse for buying from the player
           this.npcs.push(npc);
           this.log("You spot a merchant's lantern nearby.", "gold");
         }
@@ -1956,6 +1957,10 @@ export class Game {
     }
     const itemsEl = document.getElementById("shop-items");
     itemsEl.innerHTML = "";
+    const purseEl = document.getElementById("shop-purse");
+    const sellEl = document.getElementById("shop-sell");
+    purseEl.classList.add("hidden");
+    sellEl.innerHTML = "";
     const p = this.player;
 
     if (npc.npcType === "healer") {
@@ -1987,9 +1992,19 @@ export class Game {
       row.appendChild(btn);
       itemsEl.appendChild(row);
     } else if (npc.npcType === "merchant") {
+      // Merchant's purse (finite — it limits how much it can buy from you).
+      purseEl.textContent = `Purse: ${npc.gold}g`;
+      purseEl.classList.remove("hidden");
+
+      const itemDesc = (it) => it.category === "equip"
+        ? `${it.name} (+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"})`
+        : it.name;
+
+      // --- Buy: the merchant's wares ---
+      itemsEl.innerHTML = '<div class="shop-head-row">Buy</div>';
       const wares = npc.wareItems || [];
       if (!wares.length) {
-        itemsEl.innerHTML = '<div class="shop-empty">I\'m all out of stock.</div>';
+        itemsEl.innerHTML += '<div class="shop-empty">I\'m all out of stock.</div>';
       } else {
         wares.forEach((it, idx) => {
           const price = this._itemPrice(it);
@@ -1997,10 +2012,7 @@ export class Game {
           row.className = "shop-row";
           const nameEl = document.createElement("span");
           nameEl.className = "shop-name";
-          let desc = it.name;
-          if (it.category === "equip")
-            desc += ` (+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"})`;
-          nameEl.textContent = desc;
+          nameEl.textContent = itemDesc(it);
           const priceEl = document.createElement("span");
           priceEl.className = "shop-price";
           priceEl.textContent = `${price}g`;
@@ -2029,6 +2041,47 @@ export class Game {
           itemsEl.appendChild(row);
         });
       }
+
+      // --- Sell: the player's carried items (equipped gear stays equipped) ---
+      sellEl.innerHTML = '<div class="shop-head-row">Sell</div>';
+      const sellable = p.inventory;
+      if (!sellable.length) {
+        sellEl.innerHTML += '<div class="shop-empty">Nothing to sell.</div>';
+      } else {
+        sellable.forEach((it) => {
+          const price = this._sellPrice(it);
+          const afford = npc.gold >= price;
+          const row = document.createElement("div");
+          row.className = "shop-row";
+          const nameEl = document.createElement("span");
+          nameEl.className = "shop-name";
+          nameEl.textContent = itemDesc(it);
+          const priceEl = document.createElement("span");
+          priceEl.className = "shop-price";
+          priceEl.textContent = `${price}g`;
+          const btn = document.createElement("button");
+          btn.className = "shop-buy";
+          btn.textContent = "Sell";
+          btn.disabled = !afford;
+          btn.title = afford ? "" : "The merchant can't afford this.";
+          btn.onclick = () => {
+            if (npc.gold < price) return;
+            const i = p.inventory.indexOf(it);
+            if (i < 0) return;
+            p.inventory.splice(i, 1);
+            p.gold += price;
+            npc.gold -= price;
+            this.log(`You sell the ${it.name}. (+${price}g)`, "gold");
+            audio.pickup();
+            this.updateHud();
+            this.openShop(npc);
+          };
+          row.appendChild(nameEl);
+          row.appendChild(priceEl);
+          row.appendChild(btn);
+          sellEl.appendChild(row);
+        });
+      }
     }
 
     document.getElementById("shop-close").onclick = () => {
@@ -2045,6 +2098,11 @@ export class Game {
   _itemPrice(it) {
     const base = { potion: 25, weapon: 40, armor: 35, shield: 30, key: 20 };
     return (base[it.key] || 25) + (it.bonus || 0) * 3;
+  }
+
+  // Merchants buy at ~half the buy price.
+  _sellPrice(it) {
+    return Math.max(1, Math.floor(this._itemPrice(it) * 0.5));
   }
 
   useObject(x, y, obj) {

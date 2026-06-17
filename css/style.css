@@ -575,6 +575,21 @@ canvas#game {
   color: var(--muted);
   font-style: italic;
 }
+#shop-purse {
+  margin-top: 4px !important;
+  font-style: normal !important;
+  font-weight: bold;
+  color: var(--accent) !important;
+}
+#shop-purse.hidden { display: none; }
+.shop-head-row {
+  margin: 8px 0 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+#shop-sell:empty { display: none; }
 #shop-items { margin-bottom: 14px; }
 .shop-row {
   display: flex;

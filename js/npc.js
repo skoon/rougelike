@@ -52,5 +52,6 @@ export function makeNpc(type, x, y) {
     statuses: [],
     alive: true,
     wareItems: null, // set by Game.nextLevel after seeded item generation
+    gold: 0,         // merchant's purse for buying from the player (set in nextLevel)
   };
 }
