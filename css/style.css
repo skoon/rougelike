@@ -548,8 +548,17 @@ canvas#game {
   min-width: 280px;
   max-width: 380px;
   width: 90%;
+  max-height: 90%;
+  display: flex;
+  flex-direction: column;
+}
+#shop-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
 }
 #shop-head {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -615,6 +624,8 @@ canvas#game {
 .shop-buy:hover { filter: brightness(1.1); }
 .shop-buy:disabled { opacity: 0.4; cursor: default; filter: none; }
 #shop-close {
+  flex: none;
+  margin-top: 14px;
   font: inherit;
   font-size: 13px;
   padding: 6px 18px;
