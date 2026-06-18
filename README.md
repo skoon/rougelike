@@ -53,9 +53,10 @@ movement/wait/inventory/pause keys. All settings persist across sessions.
   portraits), animated chests, smashable barrels/pots/crates, hidden spike traps
   that stay sprung, cold water, flickering torches and braziers, and lever-opened
   portcullis vaults hiding treasure.
-- Equipment (weapons, armor, shields) with tiers that scale by depth, auto-equipped
-  when better and managed in an inventory panel (I). Carried potions are quaffed
-  from a number-key hotbar (1–9).
+- Equipment (weapons, armor, shields, and passive **rings** — regen / crit / warding)
+  with tiers that scale by depth, auto-equipped when better and managed in an inventory
+  panel (I). Carried potions, **scrolls** (teleport / magic map / enchant) and **wands**
+  (firebolt / frost, with limited charges) are used from a number-key hotbar (1–9).
 - Nine enemy types — animated beasts (rat, slime, blazing skull) and layered
   humanoids (goblin, bandit, skeleton archer, wraith, frost wisp, dread knight) —
   gated and scaled by depth, plus tinted "elite" variants on deeper floors.

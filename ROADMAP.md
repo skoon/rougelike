@@ -132,7 +132,7 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
         → M18 [done] → M10 [done] → M11 [done]       ← make it a RELEASED game
-        → M12 [done] → M15 [done] → M13 → M14 → M16 → M17  ← post-1.0 depth & replayability
+        → M12 [done] → M15 [done] → M17 [done] → M13 [done] → M14 → M16  ← post-1.0 depth & replayability
 ```
 
 **M18 [done]** fixed the release-blocking bug where NPCs could seal the stairs.
@@ -140,6 +140,7 @@ Post-1.0 milestones (M12–M17) are independent except where noted
 (M14 builds on M13; M17 extends the M7 shop). Suggested order by impact-per-effort:
 **M12** (abilities) → **M15** (daily run, cheap) → **M17** (selling) →
 **M13 → M14** (loot overhaul pair) → **M16** (resource clock).
+**M14** (identification & curses, builds on M13) is the next milestone.
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
@@ -538,32 +539,43 @@ activated abilities on a turn-cooldown, fired from Q / E (rebindable).
   `.ability.ready`/`.cooling`; Q/E hint in the help footer. (A render-time range telegraph
   was deemed unnecessary — abilities auto-target the nearest valid foe.)
 
-### M13 — Item depth: scrolls, wands & rings
+### M13 — Item depth: scrolls, wands & rings  *(DONE)*
 **Goal:** loot beyond gold / potion / weapon / armor / shield. Add consumable **scrolls**,
 charge-based **wands**, and a **ring/amulet equip slot** with passive bonuses. (Note:
 `amulet` is already an item key that today only awards gold — repurpose or split it.)
 
-> Context: `makeItem`/`GEAR`/`randomLootKind` (`js/entities.js`) generate loot by
-> `category`; `Game.pickupAt` switches on category; `recalcStats`/`equipItem`/
-> `useConsumable` (`js/game.js`) manage gear and consumables; shops (`js/npc.js`
-> `genWares`) and chests (`Game.useObject`) distribute by category automatically.
+> Implemented: `makeItem` (`js/entities.js`) grows three new branches — **scroll**
+> (`category:"consumable"`, sub-kinds teleport/map/enchant), **wand** (`category:"wand"`,
+> fire/frost, `charges` 3-6, `power`, `boltColor`), and **ring** (`category:"equip"`,
+> `slot:"ring"`, affix regen/crit/resist with a `desc`). `randomLootKind`, chest loot
+> (`Game.useObject`), and merchant `WARE_POOL` (`js/npc.js`) all distribute them.
+> `_itemPrice` prices the new keys (wands scale with charges, rings with affix power).
+> A shared `Game.gearMeta(it)` renders effect text for every gear slot (ring shows its
+> affix). The hotbar/inventory now act on `usableItems()` (consumables **and** wands) via
+> `useInventoryItem` → `useConsumable`/`useWand`; methods that can't take effect (wand with
+> no target, enchant with nothing equipped) return false so they cost neither a turn nor the
+> item. `player.equip.ring` folds into `recalcStats` as `regen`/`critChance`/`resist`,
+> consumed by `worldTurn` (HP trickle every 3 turns), `attack` (crit) and `damageActor`
+> (warding). New procedural world icons `drawScroll`/`drawWand`/`drawRing`. Verified: module
+> load + node unit tests of all three scrolls, wand fire/no-op, and ring recalc; sim.js
+> still 99.7% (loot-table change didn't disturb balance).
 
-- [ ] **M13-T1 — Scrolls.** One-shot consumables: **Teleport** (random reachable tile),
-    **Magic Map** (reveal the floor's `explored`), **Enchant** (+1 to a held gear piece).
-  - Files: `js/entities.js` (`scroll` category + sub-kinds), `js/game.js`
-    (`useConsumable` branch per scroll; magic-map flips `dungeon.explored`).
-  - Done when: scrolls drop, appear in the inventory/hotbar, and each effect fires.
-- [ ] **M13-T2 — Wands.** Equippable/holdable items with N charges casting firebolt/freeze
-    (reuse `rangedAttack`); charges shown in the inventory, item consumed at 0.
-  - Files: `js/entities.js` (`wand` category, `charges`), `js/game.js` (use path +
-    targeting; pairs with M12's bolt code if present).
-  - Done when: a wand fires from the hotbar, depletes charges, and is consumed when empty.
-- [ ] **M13-T3 — Ring/amulet slot.** Add `ring` to `player.equip`; rings grant passives
-    (+crit %, HP regen per turn, a damage-type resist) folded in via `recalcStats`.
-  - Files: `js/game.js` (`equip.ring`, `recalcStats`, inventory panel slot, regen tick in
-    `worldTurn`), `js/entities.js` (ring tiers/affixes in `GEAR`).
-  - Done when: rings can be equipped, show in the panel, and their passive measurably
-    affects play (e.g. regen visible in the HUD).
+- [x] **M13-T1 — Scrolls.** **Teleport** (random reachable floor tile + camera snap),
+  **Magic Map** (`dungeon.explored.fill(true)`), **Enchant** (+1 to a random equipped piece;
+  ring affixes bump their `power`/`desc` instead). A scroll that can't fire is not consumed.
+  - Files: `js/entities.js` (`scroll` sub-kinds), `js/game.js` (`useScroll`, `useConsumable`
+    return value, no-op guards on the hotbar/panel use paths).
+- [x] **M13-T2 — Wands.** `useWand` fires a player-sourced bolt at the nearest visible foe
+  (reuses `nearestVisibleMonster`/`rollDamage`/bolt effects), +`power` damage, frost wands
+  slow; depletes a charge and the item crumbles at 0. Charges shown in inventory/shop.
+  - Files: `js/entities.js` (`wand` category, `charges`), `js/game.js` (`useWand`,
+    `usableItems`/`useInventoryItem`, `drawWand`).
+- [x] **M13-T3 — Ring slot.** `player.equip.ring` with three affixes folded into
+  `recalcStats` (`regen` HP/3turns, `crit` % in `attack`, `resist` % in `damageActor`); the
+  inventory panel gained a Ring row + `gearMeta` effect text.
+  - Files: `js/game.js` (`equip.ring`, `recalcStats`, `gearMeta`, regen tick, crit, resist,
+    inventory slot, `drawRing`), `js/entities.js` (ring affixes in `makeItem`).
+  - Note: `amulet` stays a gold-category pickup (untouched); rings are the new equip slot.
 
 ### M14 — Identification & curses  *(builds on M13)*
 **Goal:** classic risk/reward — unknown items are a gamble until identified, and some are
@@ -627,31 +639,31 @@ world) and found torches/rations.
   - Done when: low fuel tightens vision and stepping on a brazier / using a torch restores
     it — creating a real "keep moving" tension. Balance the drain rate via `test/sim.js`.
 
-### M17 — Selling to merchants
+### M17 — Selling to merchants  *(DONE)*
 **Goal:** make merchants two-way. The player can sell carried gear/consumables for gold,
 and each merchant carries a finite gold purse so selling is a resource, not infinite money.
 
-> Context: `Game.openShop(npc)` (`js/game.js`) builds the shop panel; merchants buy nothing
-> today. `_itemPrice(it)` sets buy prices; `makeNpc("merchant", …)` (`js/npc.js`) and
-> `Game.nextLevel` set up `npc.wareItems`. The panel is `#shop-panel`/`#shop-items`
-> (`index.html`), styled in `css/style.css` (`.shop-row`/`.shop-buy`).
+> Implemented: each merchant gets a finite purse `40 + depth * 15` (set in
+> `Game.nextLevel`, defaulted to `0` in `makeNpc`), shown as "Purse: Ng" in the shop header
+> (`#shop-purse`). `openShop` now appends a **Sell** section (`#shop-sell`) listing every
+> carried `player.inventory` item with `_sellPrice(it)` (= `floor(_itemPrice * 0.5)`, min 1);
+> clicking "Sell" splices the item out, moves gold both ways (`p.gold += price`,
+> `npc.gold -= price`), logs it, and re-renders. Rows disable when the purse can't cover the
+> price. Equipped gear stays equipped (only carried inventory is sellable). The shop card was
+> made scrollable so long buy+sell lists keep the Leave button reachable (`#shop-scroll`).
+> Verified live.
 
-- [ ] **M17-T1 — Merchant gold purse.** Give each merchant a `gold` budget (e.g.
-  `40 + depth * 15`) at spawn; show it in the shop header.
-  - Files: `js/npc.js` (`makeNpc` merchant `gold`), `js/game.js` (`nextLevel` set it,
-    `openShop` display it), `index.html`/`css` (header gold readout).
-  - Done when: opening a merchant shows its available gold.
-- [ ] **M17-T2 — Sell UI + transaction.** A "Sell" section (or toggle) in the shop listing
-  the player's sellable inventory with a sell price; clicking sells one item.
-  - Files: `js/game.js` (`_sellPrice(it)` ≈ `Math.floor(_itemPrice * 0.5)`, a sell list in
-    `openShop`, sell handler), `css/style.css` (reuse `.shop-row`; a tab/heading).
-  - Approach: on sell — remove the item from `player.inventory` (offer equipped items via
-    an "unequip & sell" path or only sell carried), `player.gold += price`,
-    `npc.gold -= price`, then re-render the shop. Disable a row when `npc.gold < price`.
-  - Done when: selling transfers gold both ways, the merchant's purse shrinks and can run
-    out, and the lists refresh correctly. Verify gold conservation (no duplication).
-  - Note: decide whether keys/amulets are sellable (amulets are "gold" category — likely
-    auto-converted on pickup already, so they won't appear here).
+- [x] **M17-T1 — Merchant gold purse.** Purse `40 + depth * 15` set in `nextLevel`, shown in
+  the shop header (`#shop-purse`).
+  - Files: `js/npc.js` (`makeNpc` merchant `gold`), `js/game.js` (`nextLevel`, `openShop`),
+    `index.html`/`css` (`#shop-purse`).
+- [x] **M17-T2 — Sell UI + transaction.** `#shop-sell` section lists carried inventory with
+  `_sellPrice`; selling transfers gold both ways and shrinks the purse (rows disable when the
+  merchant can't afford it). Gold is conserved (splice + single transfer, no duplication).
+  - Files: `js/game.js` (`_sellPrice`, sell list + handler in `openShop`),
+    `index.html` (`#shop-sell`, `#shop-scroll`), `css/style.css` (`.shop-head-row`, scroll).
+  - Note: only carried inventory sells; amulets are gold-category (auto-converted on pickup),
+    so they never reach the sell list.
 
 ### M18 — Bugfix: blockers can seal the stairs  *(DONE)*
 **Goal:** fix the bug where a merchant, healer, or locked door can occupy the only

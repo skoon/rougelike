@@ -115,7 +115,7 @@ export class Game {
       hp: 30, maxHp: 30,
       baseAtk: 5, baseDef: 1,
       atk: 5, def: 1, // effective (base + equipment), set by recalcStats
-      equip: { weapon: null, armor: null, shield: null },
+      equip: { weapon: null, armor: null, shield: null, ring: null },
       inventory: [],
       level: 1, xp: 0, xpNext: 20,
       gold: 0,
@@ -544,6 +544,12 @@ export class Game {
       }
     }
     if (p.alive) this.tickStatuses(p);
+    // Ring of regeneration: slow trickle of HP every few turns.
+    if (p.alive && p.regen && p.hp < p.maxHp && this.turnCount % 3 === 0) {
+      const h = Math.min(p.maxHp - p.hp, p.regen);
+      p.hp += h;
+      this.spawnDamage(p.rx, p.ry, `+${h}`, this.palette("heal"));
+    }
   }
 
   startTween() {
@@ -678,6 +684,11 @@ export class Game {
       dmg *= 2;
       this.log("Backstab!", "good");
     }
+    // Ring of precision: a chance to land a heavier blow.
+    if (attacker.kind === "player" && this.player.critChance && rng() < this.player.critChance) {
+      dmg = Math.round(dmg * 1.5);
+      this.log("Critical hit!", "good");
+    }
     if (attacker.kind === "player") {
       this.log(`You hit the ${defender.name} for ${dmg}.`, "good");
       audio.hit();
@@ -732,6 +743,8 @@ export class Game {
     if (isPlayer && this.cls === "warrior") dmg = Math.max(1, dmg - 1);
     // Warrior's Brace halves incoming damage until the next turn.
     if (isPlayer && this.turnCount <= this.braceUntil) dmg = Math.max(1, Math.floor(dmg / 2));
+    // Ring of warding: flat fraction off all incoming damage.
+    if (isPlayer && this.player.resist) dmg = Math.max(1, Math.round(dmg * (1 - this.player.resist)));
     target.hp -= dmg;
     target.flashUntil = this.now + 130;
     this.spawnDamage(target.rx, target.ry, dmg, color || (isPlayer ? "#ff6b5e" : "#ffe6a8"));
@@ -923,9 +936,13 @@ export class Game {
         p.inventory.push(it);
         this.log(`You pick up a ${it.name}.`, "good");
         break;
+      case "wand":
+        p.inventory.push(it);
+        this.log(`You pick up a ${it.name} (${it.charges} charges).`, "good");
+        break;
       case "equip":
         p.inventory.push(it);
-        this.log(`You pick up a ${it.name} (+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"}).`, "good");
+        this.log(`You pick up a ${it.name} (${this.gearMeta(it)}).`, "good");
         this.tryAutoEquip(it);
         break;
     }
@@ -941,7 +958,18 @@ export class Game {
     const e = p.equip;
     p.atk = p.baseAtk + (e.weapon ? e.weapon.bonus : 0);
     p.def = p.baseDef + (e.armor ? e.armor.bonus : 0) + (e.shield ? e.shield.bonus : 0);
+    // Ring passives (M13): regen HP/3turns, crit chance, incoming-damage resist.
+    const r = e.ring;
+    p.regen = r && r.affix === "regen" ? r.power : 0;
+    p.critChance = r && r.affix === "crit" ? r.power / 100 : 0;
+    p.resist = r && r.affix === "resist" ? r.power / 100 : 0;
     if (this.statsEl) this.updateHud();
+  }
+
+  // Display string for a gear piece's effect (rings carry an affix description).
+  gearMeta(it) {
+    if (it.slot === "ring") return it.desc || "ring";
+    return `+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"}`;
   }
 
   tryAutoEquip(it) {
@@ -960,9 +988,13 @@ export class Game {
     this.renderInventory();
   }
 
+  // Quaff a potion or read a scroll. Returns true if it fired (consumes a turn);
+  // a scroll that can't take effect (e.g. enchant with no gear) returns false.
   useConsumable(it) {
     const p = this.player;
-    if (it.key === "potion") {
+    if (it.key === "scroll") {
+      if (!this.useScroll(it)) return false; // fizzled — keep the scroll, no turn
+    } else if (it.key === "potion") {
       const heal = this.cls === "mage" ? p.maxHp - p.hp : Math.min(p.maxHp - p.hp, it.heal);
       p.hp += heal;
       this.log(`You quaff a ${it.name} and recover ${heal} HP.`, "good");
@@ -972,15 +1004,102 @@ export class Game {
     }
     p.inventory = p.inventory.filter((x) => x !== it);
     this.renderInventory();
+    return true;
   }
 
-  // Use the Nth consumable (hotbar 1-9). Costs a turn.
+  // Resolve a scroll's effect. Returns false (no consume, no turn) if it can't
+  // take effect right now.
+  useScroll(it) {
+    const p = this.player, d = this.dungeon;
+    if (it.scroll === "teleport") {
+      const spots = d.floors.filter((c) =>
+        !(c.x === p.x && c.y === p.y) && !this.monsterAt(c.x, c.y) && !this.npcAt(c.x, c.y));
+      if (!spots.length) { this.log("The scroll of teleport fizzles.", "dim"); return false; }
+      const dst = spots[Math.floor(rng() * spots.length)];
+      this.spawnParticles(p.rx, p.ry, "#b48cff", 16, true);
+      p.x = dst.x; p.y = dst.y; p.rx = dst.x; p.ry = dst.y;
+      this.autoPath = null;
+      this.centerCamera(true);
+      this.spawnParticles(p.rx, p.ry, "#b48cff", 16, true);
+      this.log("The scroll of teleport whisks you away!", "good");
+      audio.descend();
+      return true;
+    }
+    if (it.scroll === "map") {
+      d.explored.fill(true);
+      this.log("The floor's layout floods into your mind.", "good");
+      audio.levelUp();
+      return true;
+    }
+    if (it.scroll === "enchant") {
+      const gear = ["weapon", "armor", "shield", "ring"].map((s) => p.equip[s]).filter(Boolean);
+      if (!gear.length) { this.log("You have nothing equipped to enchant.", "dim"); return false; }
+      const target = gear[Math.floor(rng() * gear.length)];
+      if (target.slot === "ring") {
+        target.power += target.affix === "regen" ? 1 : 5;
+        target.desc = target.affix === "regen" ? `+${target.power} HP / 3 turns`
+          : target.affix === "crit" ? `+${target.power}% crit`
+          : `−${target.power}% damage taken`;
+      } else {
+        target.bonus += 1;
+        if (!/^enchanted /.test(target.name)) target.name = "enchanted " + target.name;
+      }
+      this.recalcStats();
+      this.log(`Your ${target.name} glows with new power!`, "gold");
+      audio.levelUp();
+      this.spawnParticles(p.rx, p.ry, "#7fe6ff", 14, true);
+      return true;
+    }
+    return false;
+  }
+
+  // Fire a wand at the nearest visible foe; depletes a charge, crumbles at 0.
+  // Returns false (no turn) when there is no valid target.
+  useWand(it) {
+    const p = this.player;
+    if (it.charges <= 0) return false;
+    const target = this.nearestVisibleMonster(it.range || 6, true);
+    if (!target) { this.log(`No clear target for your ${it.name}.`, "dim"); return false; }
+    p.facing = target.x >= p.x ? 1 : -1;
+    const color = it.boltColor || "#b48cff";
+    this.effects.push({
+      type: "bolt", color,
+      x0: p.rx + 0.5, y0: p.ry + 0.5, x1: target.rx + 0.5, y1: target.ry + 0.5,
+      start: this.now, dur: 200,
+    });
+    const dmg = this.rollDamage(p, target) + (it.power || 4);
+    this.log(`Your ${it.name} blasts the ${target.name} for ${dmg}.`, "good");
+    audio.hit();
+    this.damageActor(target, dmg);
+    this.spawnParticles(target.rx, target.ry, color, 10);
+    if (it.wand === "frost" && target.alive) {
+      this.applyStatus(target, "slow", 3, 0);
+    }
+    it.charges--;
+    if (it.charges <= 0) {
+      this.player.inventory = this.player.inventory.filter((x) => x !== it);
+      this.log(`Your ${it.name} crumbles to dust.`, "dim");
+    }
+    this.renderInventory();
+    return true;
+  }
+
+  // Items usable from the hotbar / inventory panel (consumables + wands).
+  usableItems() {
+    return this.player.inventory.filter((it) =>
+      it.category === "consumable" || it.category === "wand");
+  }
+
+  // Dispatch a usable item by category. Returns true if it consumed the action.
+  useInventoryItem(it) {
+    return it.category === "wand" ? this.useWand(it) : this.useConsumable(it);
+  }
+
+  // Use the Nth hotbar item (keys 1-9). Costs a turn only if it fires.
   useConsumableSlot(n) {
-    const cons = this.player.inventory.filter((it) => it.category === "consumable");
-    const it = cons[n];
+    const it = this.usableItems()[n];
     if (!it) return;
-    this.useConsumable(it);
-    this.afterAction();
+    if (this.useInventoryItem(it)) this.afterAction();
   }
 
   // Run the world's reaction to a non-move player action (item use).
@@ -1140,33 +1259,33 @@ export class Game {
     const slotRow = (slot) => {
       const it = p.equip[slot];
       const label = slot[0].toUpperCase() + slot.slice(1);
-      const stat = slot === "weapon" ? "ATK" : "DEF";
       return `<div class="inv-row"><span class="inv-slot">${label}</span>` +
-        `<span class="inv-name">${it ? `${it.name} <em>(+${it.bonus} ${stat})</em>` : "—"}</span></div>`;
+        `<span class="inv-name">${it ? `${it.name} <em>(${this.gearMeta(it)})</em>` : "—"}</span></div>`;
     };
     document.getElementById("inv-equipped").innerHTML =
-      `<div class="inv-head">Equipped</div>${slotRow("weapon")}${slotRow("armor")}${slotRow("shield")}`;
+      `<div class="inv-head">Equipped</div>${slotRow("weapon")}${slotRow("armor")}${slotRow("shield")}${slotRow("ring")}`;
 
     const carriedEl = document.getElementById("inv-carried");
     if (!p.inventory.length) {
       carriedEl.innerHTML = `<div class="inv-head">Carried</div><div class="inv-empty">empty</div>`;
       return;
     }
-    const consumables = p.inventory.filter((it) => it.category === "consumable");
+    const usable = this.usableItems();
     carriedEl.innerHTML = `<div class="inv-head">Carried</div>`;
     p.inventory.forEach((it) => {
       const row = document.createElement("div");
       row.className = "inv-row";
       let meta = "";
-      if (it.category === "equip") meta = ` <em>(+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"})</em>`;
+      if (it.category === "equip") meta = ` <em>(${this.gearMeta(it)})</em>`;
+      else if (it.category === "wand") meta = ` <em>(${it.charges} charges)</em>`;
       const btn = document.createElement("button");
       if (it.category === "equip") {
         btn.textContent = "Equip";
         btn.onclick = () => this.equipItem(it);
       } else {
-        const n = consumables.indexOf(it);
+        const n = usable.indexOf(it);
         btn.textContent = n >= 0 && n < 9 ? `Use [${n + 1}]` : "Use";
-        btn.onclick = () => { this.useConsumable(it); this.afterAction(); };
+        btn.onclick = () => { if (this.useInventoryItem(it)) this.afterAction(); };
       }
       row.innerHTML = `<span class="inv-name">${it.name}${meta}</span>`;
       row.appendChild(btn);
@@ -1472,6 +1591,9 @@ export class Game {
       const sy = Math.round((it.y - camY) * CELL);
       if (it.key === "key") this.drawKey(sx, sy);
       else if (it.key === "artifact") this.drawArtifact(sx, sy);
+      else if (it.key === "scroll") this.drawScroll(sx, sy);
+      else if (it.key === "wand") this.drawWand(sx, sy);
+      else if (it.slot === "ring") this.drawRing(sx, sy);
       else if (it.slot === "armor") this.drawArmorIcon(sx, sy);
       else if (it.slot === "shield") this.drawShieldIcon(sx, sy);
       else drawSprite(ctx, SPR[it.sprite], sx, sy, CELL);
@@ -1757,6 +1879,71 @@ export class Game {
     ctx.restore();
   }
 
+  // Procedural rolled-parchment icon for scroll pickups.
+  drawScroll(sx, sy) {
+    const ctx = this.ctx;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + Math.sin(this.now / 300) * 1.2;
+    ctx.save();
+    ctx.fillStyle = "#e9dcb5";
+    ctx.strokeStyle = "#8a7a4a";
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(cx - 4, cy - 7, 8, 14);
+    ctx.strokeRect(cx - 4, cy - 7, 8, 14);
+    ctx.fillStyle = "#cbbd8e"; // rolled ends
+    ctx.fillRect(cx - 5, cy - 7, 10, 2);
+    ctx.fillRect(cx - 5, cy + 5, 10, 2);
+    ctx.strokeStyle = "#9a86c8"; // inked runes
+    ctx.lineWidth = 1;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx - 2.5, cy + i * 3);
+      ctx.lineTo(cx + 2.5, cy + i * 3);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Procedural wand icon: a stick with a glowing tip.
+  drawWand(sx, sy) {
+    const ctx = this.ctx;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + Math.sin(this.now / 300) * 1.2;
+    const pulse = 0.5 + 0.5 * Math.sin(this.now / 200);
+    ctx.save();
+    ctx.strokeStyle = "#7a5a3a";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy + 6);
+    ctx.lineTo(cx + 4, cy - 5);
+    ctx.stroke();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = `rgba(150,200,255,${0.4 + 0.4 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(cx + 5, cy - 6, 3 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Procedural ring icon: a gold band set with a gem.
+  drawRing(sx, sy) {
+    const ctx = this.ctx;
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2 + Math.sin(this.now / 300) * 1.2;
+    ctx.save();
+    ctx.strokeStyle = "#f4c542";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy + 1, 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#5fd0ff";
+    ctx.beginPath();
+    ctx.arc(cx, cy - 5, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // Procedural breastplate icon for armor pickups.
   drawArmorIcon(sx, sy) {
     const ctx = this.ctx;
@@ -1996,8 +2183,9 @@ export class Game {
       purseEl.textContent = `Purse: ${npc.gold}g`;
       purseEl.classList.remove("hidden");
 
-      const itemDesc = (it) => it.category === "equip"
-        ? `${it.name} (+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"})`
+      const itemDesc = (it) =>
+        it.category === "equip" ? `${it.name} (${this.gearMeta(it)})`
+        : it.category === "wand" ? `${it.name} (${it.charges} charges)`
         : it.name;
 
       // --- Buy: the merchant's wares ---
@@ -2028,6 +2216,7 @@ export class Game {
               case "gold": p.gold += it.amount; break;
               case "key": p.keys++; break;
               case "consumable": p.inventory.push(it); break;
+              case "wand": p.inventory.push(it); break;
               case "equip": p.inventory.push(it); this.tryAutoEquip(it); break;
             }
             this.log(`You buy a ${it.name}. (−${price}g)`, "gold");
@@ -2096,8 +2285,12 @@ export class Game {
   }
 
   _itemPrice(it) {
-    const base = { potion: 25, weapon: 40, armor: 35, shield: 30, key: 20 };
-    return (base[it.key] || 25) + (it.bonus || 0) * 3;
+    const base = { potion: 25, weapon: 40, armor: 35, shield: 30, key: 20,
+      scroll: 30, wand: 55, ring: 60 };
+    let price = (base[it.key] || 25) + (it.bonus || 0) * 3;
+    if (it.category === "wand") price += (it.charges || 0) * 4;
+    if (it.slot === "ring") price += (it.power || 0); // affix strength
+    return price;
   }
 
   // Merchants buy at ~half the buy price.
@@ -2152,7 +2345,7 @@ export class Game {
         this.log("The chest is empty.", "dim");
         audio.pickup();
       } else {
-        const kinds = ["gold", "potion", "weapon", "armor", "shield"];
+        const kinds = ["gold", "potion", "weapon", "armor", "shield", "scroll", "wand", "ring"];
         const it = makeItem(kinds[Math.floor(rng() * kinds.length)], x, y, this.depth);
         this.log(`You open a chest! Found a ${it.name}.`, "gold");
         audio.levelUp();
@@ -2161,6 +2354,7 @@ export class Game {
           case "gold": p.gold += it.amount; break;
           case "key": p.keys++; break;
           case "consumable": p.inventory.push(it); break;
+          case "wand": p.inventory.push(it); break;
           case "equip": p.inventory.push(it); this.tryAutoEquip(it); break;
         }
         this.updateHud();

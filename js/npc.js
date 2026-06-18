@@ -19,7 +19,7 @@ export const NPC_TYPES = {
   },
 };
 
-const WARE_POOL = ["potion", "potion", "weapon", "weapon", "armor", "shield", "key"];
+const WARE_POOL = ["potion", "potion", "weapon", "armor", "shield", "scroll", "scroll", "wand", "ring", "key"];
 
 // Returns an array of 3 item key strings for a merchant's stock.
 export function genWares() {

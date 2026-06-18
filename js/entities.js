@@ -149,7 +149,8 @@ export const GEAR = {
 };
 
 // Build a world/inventory item. `category` drives how pickup handles it:
-// "gold" (instant), "key" (instant), "consumable", or "equip".
+// "gold" (instant), "key" (instant), "consumable" (potions + scrolls), "wand"
+// (charge-based caster), or "equip" (weapon/armor/shield/ring).
 export function makeItem(key, x, y, depth) {
   const base = { kind: "item", key, x, y };
   if (key === "gold") {
@@ -165,6 +166,39 @@ export function makeItem(key, x, y, depth) {
     base.heal = 12;
   } else if (key === "artifact") {
     base.category = "artifact"; base.name = "the Forgotten Relic";
+  } else if (key === "scroll") {
+    // One-shot consumables; the effect lives in Game.useScroll.
+    base.category = "consumable"; base.sprite = "scroll";
+    const kinds = [
+      ["teleport", "scroll of teleport"],
+      ["map",      "scroll of magic mapping"],
+      ["enchant",  "scroll of enchantment"],
+    ];
+    const pick = kinds[Math.floor(rng() * kinds.length)];
+    base.scroll = pick[0]; base.name = pick[1];
+  } else if (key === "wand") {
+    // Charge-based caster; fired from the hotbar (Game.useWand).
+    base.category = "wand"; base.sprite = "wand";
+    const kinds = [
+      ["fire",  "wand of firebolts", "#ff8c2a", 5],
+      ["frost", "wand of frost",     "#9fe8ff", 3],
+    ];
+    const pick = kinds[Math.floor(rng() * kinds.length)];
+    base.wand = pick[0]; base.name = pick[1];
+    base.boltColor = pick[2]; base.power = pick[3];
+    base.charges = 3 + Math.floor(rng() * 4); // 3-6 casts
+    base.range = 6;
+  } else if (key === "ring") {
+    // Passive equip in its own slot; affixes fold into Game.recalcStats.
+    base.category = "equip"; base.slot = "ring"; base.sprite = "ring";
+    const affixes = [
+      ["ring of regeneration", "regen",  1,  "+1 HP / 3 turns"],
+      ["ring of precision",    "crit",   18, "+18% crit"],
+      ["ring of warding",      "resist", 25, "−25% damage taken"],
+    ];
+    const pick = affixes[Math.floor(rng() * affixes.length)];
+    base.name = pick[0]; base.affix = pick[1]; base.power = pick[2];
+    base.desc = pick[3]; base.bonus = 0;
   } else {
     // weapon / armor / shield
     const tiers = GEAR[key];
@@ -198,11 +232,14 @@ function shuffle(a) {
 
 function randomLootKind() {
   const r = rng();
-  if (r < 0.34) return "gold";
-  if (r < 0.60) return "potion";
-  if (r < 0.72) return "weapon";
-  if (r < 0.84) return "armor";
-  if (r < 0.93) return "shield";
+  if (r < 0.30) return "gold";
+  if (r < 0.50) return "potion";
+  if (r < 0.62) return "weapon";
+  if (r < 0.72) return "armor";
+  if (r < 0.80) return "shield";
+  if (r < 0.88) return "scroll";
+  if (r < 0.93) return "wand";
+  if (r < 0.97) return "ring";
   return "amulet";
 }
 
