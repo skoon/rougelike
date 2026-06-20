@@ -132,7 +132,7 @@ M3 [done] → M2 [done] → M5 [done]                 ← make it FEEL good, che
         → M6 [done] → M7 [done]                     ← make it a COMPLETE game
         → M8 [done] → M9 [done]                      ← pay down the backlog, look GREAT
         → M18 [done] → M10 [done] → M11 [done]       ← make it a RELEASED game
-        → M12 [done] → M15 [done] → M17 [done] → M13 [done] → M14 → M16  ← post-1.0 depth & replayability
+        → M12 [done] → M15 [done] → M17 [done] → M13 [done] → M14 [done] → M16  ← post-1.0 depth & replayability
 ```
 
 **M18 [done]** fixed the release-blocking bug where NPCs could seal the stairs.
@@ -140,7 +140,7 @@ Post-1.0 milestones (M12–M17) are independent except where noted
 (M14 builds on M13; M17 extends the M7 shop). Suggested order by impact-per-effort:
 **M12** (abilities) → **M15** (daily run, cheap) → **M17** (selling) →
 **M13 → M14** (loot overhaul pair) → **M16** (resource clock).
-**M14** (identification & curses, builds on M13) is the next milestone.
+**M16** (resource clock: torchlight & rations) is the last remaining milestone.
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
@@ -577,22 +577,39 @@ charge-based **wands**, and a **ring/amulet equip slot** with passive bonuses. (
     inventory slot, `drawRing`), `js/entities.js` (ring affixes in `makeItem`).
   - Note: `amulet` stays a gold-category pickup (untouched); rings are the new equip slot.
 
-### M14 — Identification & curses  *(builds on M13)*
+### M14 — Identification & curses  *(DONE, builds on M13)*
 **Goal:** classic risk/reward — unknown items are a gamble until identified, and some are
 cursed (locked on, hidden malus) in exchange for a strong bonus.
 
-- [ ] **M14-T1 — Unidentified items.** New gear/rings/wands spawn `identified:false` and
-    show an obscured name ("a glowing ring") until equipped/used or read with a **Scroll of
-    Identify** (extends M13-T1).
-  - Files: `js/entities.js` (`identified` flag in `makeItem`), `js/game.js` (display-name
-    gating in `renderInventory`, recap, and pickup logs; identify-on-equip/use).
-  - Done when: unknown items read as obscured and resolve on identify/equip.
-- [ ] **M14-T2 — Curses.** A fraction of items roll `cursed:true` (a malus or a
-    can't-unequip flag) offset by a larger bonus; revealed on equip. A **Scroll of Remove
-    Curse** lifts it.
-  - Files: `js/entities.js` (`cursed` roll), `js/game.js` (`equipItem` refuses to swap
-    cursed gear; curse reveal log + tint).
-  - Done when: cursed gear sticks until cleansed and the trade-off is legible to the player.
+> Implemented: `makeItem` (`js/entities.js`) tags every equip piece and wand
+> `identified:false`, and rolls `cursed:true` on ~22% of gear — cursed gear gets a stronger
+> pull (weapon/armor/shield `bonus +2`; ring affix boosted) **and** a hidden drawback
+> (a `malusAtk`/`malusDef` to the opposite stat). `Game.displayName(it)` renders an obscured
+> name by slot ("a glowing ring", "an unknown weapon", "an unmarked wand") until identified;
+> `itemPhrase` handles log articles. Items reveal on **equip** (`equipItem` → `identify`),
+> on **wand use** (`useWand`), or via two new scrolls — **identify** (appraises all carried
+> unknowns, exposing curses before you wear them) and **remove curse** (frees + de-maluses
+> all worn cursed gear). `tryAutoEquip` no longer auto-equips unknown gear (you must choose
+> to gamble), and `equipItem` refuses to swap **out** a cursed piece. `recalcStats` folds the
+> cursed malus into ATK/DEF; `gearMeta` shows it. Merchant wares are pre-appraised
+> (identified, never cursed). Inventory marks cursed pieces in red ("cursed"). Verified:
+> node unit tests of obscured naming, identify-on-equip, cursed lock-out, malus math,
+> identify/remove-curse scrolls; 19% cursed-rate over 400 rolls; sim.js still clean.
+
+- [x] **M14-T1 — Unidentified items.** Gear/rings/wands spawn `identified:false`, show an
+  obscured name, and resolve on equip/use or a **Scroll of Identify** (reveals all carried
+  unknowns, including their cursed status).
+  - Files: `js/entities.js` (`identified` flag), `js/game.js` (`displayName`/`itemPhrase`/
+    `identify`, name gating in `renderInventory`/pickup logs/shop, identify-on-equip/use,
+    `useScroll` identify branch).
+- [x] **M14-T2 — Curses.** ~22% of gear rolls `cursed:true`: a higher bonus plus an opposite-
+  stat malus, locked on once worn (`equipItem` won't swap it out; reveal log + red tint +
+  particle). A **Scroll of Remove Curse** lifts the curse and its malus.
+  - Files: `js/entities.js` (`cursed` roll + `malusAtk`/`malusDef`), `js/game.js`
+    (`recalcStats` malus, `equipItem` lock + reveal, `useScroll` uncurse branch),
+    `css/style.css` (`.inv-name.cursed`, `em.curse`).
+  - Note: deviates slightly from "malus *or* can't-unequip" — cursed gear has **both** a
+    malus and the lock, so the lure (stronger bonus) is a genuine gamble, not free power.
 
 ### M15 — Daily challenge & leaderboard  *(DONE)*
 **Goal:** a shared, fixed-seed run per day for competition and replay. Leans entirely on
@@ -710,5 +727,4 @@ approach to the down-stairs, making a floor impossible to descend without a work
   + `weight`; `populate()` will spawn it automatically.
 - **Add a new item:** add to `ITEMS` + handle its `key` in `Game.pickupAt`.
 - **Add input:** extend the `switch` in `Game.bindInput`; remember the `busyUntil` lock.
-- **Verify a change:** run the server, open the page, drive it with keyboard events, and
-  check the preview console for errors (see "Definition of done").
+- **Verify a change:** Tell the user how to verify the change manually and ask them to verify that the change is complete before considering the change as "done" (see "Definition of done").

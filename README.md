@@ -55,8 +55,13 @@ movement/wait/inventory/pause keys. All settings persist across sessions.
   portcullis vaults hiding treasure.
 - Equipment (weapons, armor, shields, and passive **rings** — regen / crit / warding)
   with tiers that scale by depth, auto-equipped when better and managed in an inventory
-  panel (I). Carried potions, **scrolls** (teleport / magic map / enchant) and **wands**
-  (firebolt / frost, with limited charges) are used from a number-key hotbar (1–9).
+  panel (I). Carried potions, **scrolls** (teleport / magic map / enchant / identify /
+  remove curse) and **wands** (firebolt / frost, with limited charges) are used from a
+  number-key hotbar (1–9).
+- Risk/reward loot: dropped gear and wands are **unidentified** (an obscured name) until
+  equipped, used, or read with a scroll of identify, and ~1 in 5 pieces is **cursed** —
+  a stronger bonus and a hidden stat malus that locks onto you until a scroll of remove
+  curse cleanses it. Merchant stock is always appraised and curse-free.
 - Nine enemy types — animated beasts (rat, slime, blazing skull) and layered
   humanoids (goblin, bandit, skeleton archer, wraith, frost wisp, dread knight) —
   gated and scaled by depth, plus tinted "elite" variants on deeper floors.

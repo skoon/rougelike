@@ -676,6 +676,8 @@ canvas#game {
 .inv-slot { width: 60px; color: var(--muted); }
 .inv-name { flex: 1; color: var(--ink); }
 .inv-name em { color: var(--accent); font-style: normal; }
+.inv-name.cursed { color: #e0594b; }
+.inv-name em.curse { color: #e0594b; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
 .inv-empty { color: var(--muted); font-style: italic; font-size: 13px; }
 .inv-row button {
   font: inherit;

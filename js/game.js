@@ -2,7 +2,7 @@
 
 import { drawSprite, drawFrame, STRIPS, SPR, TILE } from "./assets.js";
 import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER, GATE } from "./dungeon.js";
-import { populate, makeMonster, makeBoss, makeItem, CLASSES } from "./entities.js";
+import { populate, makeMonster, makeBoss, makeItem, ringDesc, CLASSES } from "./entities.js";
 import { makeNpc, genWares } from "./npc.js";
 import { findPath } from "./pathfind.js";
 import { audio } from "./audio.js";
@@ -176,6 +176,11 @@ export class Game {
         if (spot) {
           const npc = makeNpc("merchant", spot.x, spot.y);
           npc.wareItems = genWares().map((key) => makeItem(key, 0, 0, this.depth));
+          // Merchants appraise their stock: wares are identified and never cursed.
+          npc.wareItems.forEach((it) => {
+            it.identified = true;
+            if (it.cursed) { it.cursed = false; it.malusAtk = 0; it.malusDef = 0; }
+          });
           npc.gold = 40 + this.depth * 15; // finite purse for buying from the player
           this.npcs.push(npc);
           this.log("You spot a merchant's lantern nearby.", "gold");
@@ -938,11 +943,15 @@ export class Game {
         break;
       case "wand":
         p.inventory.push(it);
-        this.log(`You pick up a ${it.name} (${it.charges} charges).`, "good");
+        this.log(it.identified === false
+          ? `You pick up ${this.displayName(it)}.`
+          : `You pick up a ${it.name} (${it.charges} charges).`, "good");
         break;
       case "equip":
         p.inventory.push(it);
-        this.log(`You pick up a ${it.name} (${this.gearMeta(it)}).`, "good");
+        this.log(it.identified === false
+          ? `You pick up ${this.displayName(it)}.`
+          : `You pick up a ${it.name} (${this.gearMeta(it)}).`, "good");
         this.tryAutoEquip(it);
         break;
     }
@@ -956,8 +965,14 @@ export class Game {
   recalcStats() {
     const p = this.player;
     const e = p.equip;
-    p.atk = p.baseAtk + (e.weapon ? e.weapon.bonus : 0);
-    p.def = p.baseDef + (e.armor ? e.armor.bonus : 0) + (e.shield ? e.shield.bonus : 0);
+    // M14: cursed gear drags a secondary stat while worn.
+    let malusAtk = 0, malusDef = 0;
+    for (const s of ["weapon", "armor", "shield", "ring"]) {
+      const g = e[s];
+      if (g && g.cursed) { malusAtk += g.malusAtk || 0; malusDef += g.malusDef || 0; }
+    }
+    p.atk = Math.max(1, p.baseAtk + (e.weapon ? e.weapon.bonus : 0) - malusAtk);
+    p.def = Math.max(0, p.baseDef + (e.armor ? e.armor.bonus : 0) + (e.shield ? e.shield.bonus : 0) - malusDef);
     // Ring passives (M13): regen HP/3turns, crit chance, incoming-damage resist.
     const r = e.ring;
     p.regen = r && r.affix === "regen" ? r.power : 0;
@@ -966,24 +981,65 @@ export class Game {
     if (this.statsEl) this.updateHud();
   }
 
+  // Obscured name for an unidentified item; its real name once known (M14).
+  displayName(it) {
+    if (it.identified === false) {
+      switch (it.slot || it.category) {
+        case "weapon": return "an unknown weapon";
+        case "armor":  return "unidentified armor";
+        case "shield": return "an unmarked shield";
+        case "ring":   return "a glowing ring";
+        default:       return it.category === "wand" ? "an unmarked wand" : "an unknown item";
+      }
+    }
+    return it.name;
+  }
+
+  // Name with an article for log lines ("a healing potion" / "an unknown weapon").
+  itemPhrase(it) {
+    return it.identified === false ? this.displayName(it) : `a ${it.name}`;
+  }
+
+  // Reveal an unidentified item. Returns true if it was previously unknown.
+  identify(it) {
+    if (it.identified === false) { it.identified = true; return true; }
+    return false;
+  }
+
   // Display string for a gear piece's effect (rings carry an affix description).
   gearMeta(it) {
     if (it.slot === "ring") return it.desc || "ring";
-    return `+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"}`;
+    let s = `+${it.bonus} ${it.slot === "weapon" ? "ATK" : "DEF"}`;
+    if (it.malusAtk) s += `, −${it.malusAtk} ATK`;
+    if (it.malusDef) s += `, −${it.malusDef} DEF`;
+    return s;
   }
 
   tryAutoEquip(it) {
+    if (it.identified === false) return;       // don't auto-equip unknown gear (might be cursed)
     const cur = this.player.equip[it.slot];
+    if (cur && cur.cursed) return;             // a cursed piece can't be swapped out
     if (!cur || it.bonus > cur.bonus) this.equipItem(it);
   }
 
   equipItem(it) {
     const p = this.player;
     const cur = p.equip[it.slot];
+    // M14: cursed gear refuses to come off until cleansed.
+    if (cur && cur.cursed) {
+      this.log(`The ${cur.name} is cursed — it won't come off!`, "bad");
+      return;
+    }
+    this.identify(it); // wearing it reveals what it is
     p.inventory = p.inventory.filter((x) => x !== it);
     if (cur) p.inventory.push(cur);
     p.equip[it.slot] = it;
     this.log(`You equip the ${it.name}.`, "good");
+    if (it.cursed) {
+      this.log(`A malevolent force binds the ${it.name} to you — it's cursed!`, "bad");
+      this.spawnParticles(p.rx, p.ry, "#8a1f5a", 14, true);
+      audio.hurt();
+    }
     this.recalcStats();
     this.renderInventory();
   }
@@ -1037,9 +1093,7 @@ export class Game {
       const target = gear[Math.floor(rng() * gear.length)];
       if (target.slot === "ring") {
         target.power += target.affix === "regen" ? 1 : 5;
-        target.desc = target.affix === "regen" ? `+${target.power} HP / 3 turns`
-          : target.affix === "crit" ? `+${target.power}% crit`
-          : `−${target.power}% damage taken`;
+        target.desc = ringDesc(target.affix, target.power);
       } else {
         target.bonus += 1;
         if (!/^enchanted /.test(target.name)) target.name = "enchanted " + target.name;
@@ -1048,6 +1102,29 @@ export class Game {
       this.log(`Your ${target.name} glows with new power!`, "gold");
       audio.levelUp();
       this.spawnParticles(p.rx, p.ry, "#7fe6ff", 14, true);
+      return true;
+    }
+    if (it.scroll === "identify") {
+      const unknown = p.inventory.filter((x) => x.identified === false);
+      if (!unknown.length) { this.log("You have nothing left to identify.", "dim"); return false; }
+      unknown.forEach((x) => { x.identified = true; });
+      this.log(`The scroll reveals: ${unknown.map((x) => x.name).join(", ")}.`, "good");
+      audio.levelUp();
+      this.renderInventory();
+      return true;
+    }
+    if (it.scroll === "uncurse") {
+      const worn = ["weapon", "armor", "shield", "ring"].map((s) => p.equip[s]);
+      const cursed = worn.filter((g) => g && g.cursed);
+      if (!cursed.length) { this.log("There is no curse to lift.", "dim"); return false; }
+      cursed.forEach((g) => {
+        g.cursed = false; g.malusAtk = 0; g.malusDef = 0;
+      });
+      this.recalcStats();
+      this.log("A wave of cleansing light breaks the curse.", "good");
+      audio.levelUp();
+      this.spawnParticles(p.rx, p.ry, "#fff0a0", 16, true);
+      this.renderInventory();
       return true;
     }
     return false;
@@ -1059,7 +1136,8 @@ export class Game {
     const p = this.player;
     if (it.charges <= 0) return false;
     const target = this.nearestVisibleMonster(it.range || 6, true);
-    if (!target) { this.log(`No clear target for your ${it.name}.`, "dim"); return false; }
+    if (!target) { this.log(`No clear target for your ${this.displayName(it)}.`, "dim"); return false; }
+    this.identify(it); // firing reveals what the wand is
     p.facing = target.x >= p.x ? 1 : -1;
     const color = it.boltColor || "#b48cff";
     this.effects.push({
@@ -1259,8 +1337,10 @@ export class Game {
     const slotRow = (slot) => {
       const it = p.equip[slot];
       const label = slot[0].toUpperCase() + slot.slice(1);
+      const cls = it && it.cursed ? "inv-name cursed" : "inv-name";
+      const curse = it && it.cursed ? ` <em class="curse">cursed</em>` : "";
       return `<div class="inv-row"><span class="inv-slot">${label}</span>` +
-        `<span class="inv-name">${it ? `${it.name} <em>(${this.gearMeta(it)})</em>` : "—"}</span></div>`;
+        `<span class="${cls}">${it ? `${it.name} <em>(${this.gearMeta(it)})</em>${curse}` : "—"}</span></div>`;
     };
     document.getElementById("inv-equipped").innerHTML =
       `<div class="inv-head">Equipped</div>${slotRow("weapon")}${slotRow("armor")}${slotRow("shield")}${slotRow("ring")}`;
@@ -1276,8 +1356,14 @@ export class Game {
       const row = document.createElement("div");
       row.className = "inv-row";
       let meta = "";
-      if (it.category === "equip") meta = ` <em>(${this.gearMeta(it)})</em>`;
-      else if (it.category === "wand") meta = ` <em>(${it.charges} charges)</em>`;
+      const known = it.identified !== false;
+      if (known) {
+        if (it.category === "equip") meta = ` <em>(${this.gearMeta(it)})</em>`;
+        else if (it.category === "wand") meta = ` <em>(${it.charges} charges)</em>`;
+      }
+      // Once identified, flag a cursed piece so the player can avoid equipping it.
+      const cursed = known && it.cursed;
+      if (cursed) meta += ` <em class="curse">cursed</em>`;
       const btn = document.createElement("button");
       if (it.category === "equip") {
         btn.textContent = "Equip";
@@ -1287,7 +1373,7 @@ export class Game {
         btn.textContent = n >= 0 && n < 9 ? `Use [${n + 1}]` : "Use";
         btn.onclick = () => { if (this.useInventoryItem(it)) this.afterAction(); };
       }
-      row.innerHTML = `<span class="inv-name">${it.name}${meta}</span>`;
+      row.innerHTML = `<span class="inv-name${cursed ? " cursed" : ""}">${this.displayName(it)}${meta}</span>`;
       row.appendChild(btn);
       carriedEl.appendChild(row);
     });
@@ -2183,10 +2269,13 @@ export class Game {
       purseEl.textContent = `Purse: ${npc.gold}g`;
       purseEl.classList.remove("hidden");
 
-      const itemDesc = (it) =>
-        it.category === "equip" ? `${it.name} (${this.gearMeta(it)})`
-        : it.category === "wand" ? `${it.name} (${it.charges} charges)`
-        : it.name;
+      const itemDesc = (it) => {
+        const nm = this.displayName(it);
+        if (it.identified === false) return nm; // unknown carried items in the sell list
+        if (it.category === "equip") return `${nm} (${this.gearMeta(it)})`;
+        if (it.category === "wand") return `${nm} (${it.charges} charges)`;
+        return nm;
+      };
 
       // --- Buy: the merchant's wares ---
       itemsEl.innerHTML = '<div class="shop-head-row">Buy</div>';
@@ -2260,7 +2349,7 @@ export class Game {
             p.inventory.splice(i, 1);
             p.gold += price;
             npc.gold -= price;
-            this.log(`You sell the ${it.name}. (+${price}g)`, "gold");
+            this.log(`You sell the ${this.displayName(it)}. (+${price}g)`, "gold");
             audio.pickup();
             this.updateHud();
             this.openShop(npc);
@@ -2347,7 +2436,7 @@ export class Game {
       } else {
         const kinds = ["gold", "potion", "weapon", "armor", "shield", "scroll", "wand", "ring"];
         const it = makeItem(kinds[Math.floor(rng() * kinds.length)], x, y, this.depth);
-        this.log(`You open a chest! Found a ${it.name}.`, "gold");
+        this.log(`You open a chest! Found ${this.itemPhrase(it)}.`, "gold");
         audio.levelUp();
         this.spawnParticles(x, y, "#ffcf6b", 10, true);
         switch (it.category) {

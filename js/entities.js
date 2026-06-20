@@ -173,6 +173,8 @@ export function makeItem(key, x, y, depth) {
       ["teleport", "scroll of teleport"],
       ["map",      "scroll of magic mapping"],
       ["enchant",  "scroll of enchantment"],
+      ["identify", "scroll of identify"],
+      ["uncurse",  "scroll of remove curse"],
     ];
     const pick = kinds[Math.floor(rng() * kinds.length)];
     base.scroll = pick[0]; base.name = pick[1];
@@ -192,13 +194,13 @@ export function makeItem(key, x, y, depth) {
     // Passive equip in its own slot; affixes fold into Game.recalcStats.
     base.category = "equip"; base.slot = "ring"; base.sprite = "ring";
     const affixes = [
-      ["ring of regeneration", "regen",  1,  "+1 HP / 3 turns"],
-      ["ring of precision",    "crit",   18, "+18% crit"],
-      ["ring of warding",      "resist", 25, "−25% damage taken"],
+      ["ring of regeneration", "regen",  1],
+      ["ring of precision",    "crit",   18],
+      ["ring of warding",      "resist", 25],
     ];
     const pick = affixes[Math.floor(rng() * affixes.length)];
     base.name = pick[0]; base.affix = pick[1]; base.power = pick[2];
-    base.desc = pick[3]; base.bonus = 0;
+    base.desc = ringDesc(base.affix, base.power); base.bonus = 0;
   } else {
     // weapon / armor / shield
     const tiers = GEAR[key];
@@ -208,7 +210,31 @@ export function makeItem(key, x, y, depth) {
     base.name = tiers[ti][0];
     base.bonus = tiers[ti][1];
   }
+
+  // M14: gear and wands arrive unidentified — an obscured name until equipped,
+  // used, or read with a scroll of identify.
+  if (base.category === "equip" || base.category === "wand") base.identified = false;
+
+  // M14: a fraction of gear is cursed — a stronger pull, but it locks onto you
+  // (can't be swapped out) and drags a secondary stat until cleansed.
+  if (base.category === "equip" && rng() < 0.22) {
+    base.cursed = true;
+    if (base.slot === "ring") {
+      base.power += base.affix === "regen" ? 1 : 8;
+      base.desc = ringDesc(base.affix, base.power);
+    } else {
+      base.bonus += 2;
+      if (base.slot === "weapon") base.malusDef = 2; else base.malusAtk = 2;
+    }
+  }
   return base;
+}
+
+// Human-readable effect line for a ring affix at a given power.
+export function ringDesc(affix, power) {
+  return affix === "regen" ? `+${power} HP / 3 turns`
+    : affix === "crit" ? `+${power}% crit`
+    : `−${power}% damage taken`;
 }
 
 function weightedPick(keys, depth) {
