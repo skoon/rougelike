@@ -31,6 +31,20 @@ export function genWares() {
   return pool.slice(0, 3);
 }
 
+// Camp merchant stock (M19-T4): 5 slots — a guaranteed potion up front so
+// healing is always purchasable, plus 4 rolls from the pool.
+// M19-T3: guarantee a Scroll of Return in the last slot here once
+// entities.js exposes a "scrollReturn"-style item key (swap it in for
+// pool[3] below); until then this is just a normal 4th roll.
+export function genCampWares() {
+  const pool = WARE_POOL.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return ["potion", ...pool.slice(0, 4)];
+}
+
 export function makeNpc(type, x, y) {
   const t = NPC_TYPES[type];
   return {
