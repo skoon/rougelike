@@ -2391,11 +2391,14 @@ export class Game {
       row.appendChild(btn);
       itemsEl.appendChild(row);
 
-      // Lift curses (M19-T4): only worth showing when something is actually
-      // cursed; the button itself disables if the player can't afford it.
+      // Lift curses (M19-T4): a camp-only service. Dungeon healers stay
+      // HP-for-gold only — cleansing on every 4th floor would blunt the M14
+      // curse mechanic and remove one of the camp's reasons to exist. Only
+      // worth showing when something is actually cursed; the button itself
+      // disables if the player can't afford it.
       const wornCursed = ["weapon", "armor", "shield", "ring"]
         .map((s) => p.equip[s]).filter((g) => g && g.cursed);
-      if (wornCursed.length) {
+      if (this.mode === "camp" && wornCursed.length) {
         const curseCost = 15 + 10 * wornCursed.length;
         const curseRow = document.createElement("div");
         curseRow.className = "shop-row";
