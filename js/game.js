@@ -4,7 +4,7 @@ import { drawSprite, drawFrame, STRIPS, SPR, TILE } from "./assets.js";
 import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER, GATE, WAYSTONE } from "./dungeon.js";
 import { buildCamp, CAMP_THEME } from "./camp.js";
 import { populate, makeMonster, makeBoss, makeItem, ringDesc, CLASSES } from "./entities.js";
-import { makeNpc, genWares } from "./npc.js";
+import { makeNpc, genWares, genCampWares } from "./npc.js";
 import { findPath } from "./pathfind.js";
 import { audio } from "./audio.js";
 import { saveRun, getBest, getHistory, updateMeta, getUnlocks } from "./scores.js";
@@ -107,6 +107,7 @@ export class Game {
     this.depth = 0;
     this.mode = "dungeon";    // "dungeon" | "camp" — the camp is a mode, not a depth
     this.campReturnDepth = 0; // depth the camp was entered from (leaveCamp rebuilds it)
+    this.campRested = false; // campfire rest is once-per-visit; reset by _swapToCamp
     this.player = {
       kind: "player",
       // Layered paper-doll: body + leather armor + ginger hair.
@@ -527,6 +528,12 @@ export class Game {
 
     if (this.dungeon.get(p.x, p.y) === SHRINE) this.useShrine();
 
+    // Camp campfire: full heal + clear statuses, once per visit (M19-T4).
+    if (this.mode === "camp" && this.dungeon.campfire &&
+      p.x === this.dungeon.campfire.x && p.y === this.dungeon.campfire.y) {
+      this.restAtCampfire();
+    }
+
     if (this.dungeon.get(p.x, p.y) === STAIRS) {
       // The camp's cave mouth is a STAIRS tile, but it leads back down to the
       // depth we left rather than one deeper.
@@ -585,6 +592,21 @@ export class Game {
     this.recalcStats();
     audio.levelUp();
     this.spawnParticles(p.rx, p.ry, "#7fe6ff", 14, true);
+  }
+
+  // Camp campfire rest (M19-T4): full heal + clear statuses, free, once per
+  // camp visit — `campRested` is reset in `_swapToCamp`. Mirrors useShrine's
+  // log/particles/SFX pattern.
+  restAtCampfire() {
+    if (this.campRested) return;
+    this.campRested = true;
+    const p = this.player;
+    p.hp = p.maxHp;
+    p.statuses = [];
+    this.log("The campfire's warmth mends your wounds and clears your ailments.", "good");
+    audio.levelUp();
+    this.spawnParticles(p.rx, p.ry, "#ff9a3c", 16, true);
+    this.updateHud();
   }
 
   // Kick off a fade-to-black transition. `target()` runs at the midpoint (while
@@ -651,13 +673,23 @@ export class Game {
 
     // The two camp NPCs stand on the path in front of their 2x2 tents (the
     // camp legend places them; the tents themselves are impassable).
-    // M19-T4: camp stock/purse/services — merchant wares + purse, healer
-    // uncurse rows, and the campfire rest hang off these instances.
     const spots = this.dungeon.npcSpots;
+    const merchant = makeNpc("merchant", spots.merchant.x, spots.merchant.y);
+    // Camp merchant: bigger stock and purse than a dungeon merchant (M19-T4).
+    // Wares are identified and never cursed, same as the dungeon-merchant
+    // pattern in nextLevel — a merchant appraises everything it stocks.
+    merchant.wareItems = genCampWares().map((key) => makeItem(key, 0, 0, this.campReturnDepth));
+    merchant.wareItems.forEach((it) => {
+      it.identified = true;
+      if (it.cursed) { it.cursed = false; it.malusAtk = 0; it.malusDef = 0; }
+    });
+    merchant.gold = 200 + this.campReturnDepth * 25;
     this.npcs = [
-      makeNpc("merchant", spots.merchant.x, spots.merchant.y),
+      merchant,
       makeNpc("healer", spots.healer.x, spots.healer.y),
     ];
+    // Campfire rest is usable once per camp visit (M19-T4).
+    this.campRested = false;
 
     this.dungeon.computeFov(p.x, p.y, FOV_RADIUS); // no-op: the camp is fully lit
     this.centerCamera(true);
@@ -1122,6 +1154,18 @@ export class Game {
     this.renderInventory();
   }
 
+  // Strip the curse flag + stat malus from every cursed worn item. Shared by
+  // the uncurse scroll and the camp healer's "Lift curses" service (M19-T4).
+  // Returns the worn pieces that were cleansed (empty array if none were cursed).
+  removeCurses() {
+    const p = this.player;
+    const worn = ["weapon", "armor", "shield", "ring"].map((s) => p.equip[s]);
+    const cursed = worn.filter((g) => g && g.cursed);
+    cursed.forEach((g) => { g.cursed = false; g.malusAtk = 0; g.malusDef = 0; });
+    if (cursed.length) this.recalcStats();
+    return cursed;
+  }
+
   // Quaff a potion or read a scroll. Returns true if it fired (consumes a turn);
   // a scroll that can't take effect (e.g. enchant with no gear) returns false.
   useConsumable(it) {
@@ -1192,13 +1236,8 @@ export class Game {
       return true;
     }
     if (it.scroll === "uncurse") {
-      const worn = ["weapon", "armor", "shield", "ring"].map((s) => p.equip[s]);
-      const cursed = worn.filter((g) => g && g.cursed);
+      const cursed = this.removeCurses();
       if (!cursed.length) { this.log("There is no curse to lift.", "dim"); return false; }
-      cursed.forEach((g) => {
-        g.cursed = false; g.malusAtk = 0; g.malusDef = 0;
-      });
-      this.recalcStats();
       this.log("A wave of cleansing light breaks the curse.", "good");
       audio.levelUp();
       this.spawnParticles(p.rx, p.ry, "#fff0a0", 16, true);
@@ -2407,6 +2446,44 @@ export class Game {
       row.appendChild(priceEl);
       row.appendChild(btn);
       itemsEl.appendChild(row);
+
+      // Lift curses (M19-T4): a camp-only service. Dungeon healers stay
+      // HP-for-gold only — cleansing on every 4th floor would blunt the M14
+      // curse mechanic and remove one of the camp's reasons to exist. Only
+      // worth showing when something is actually cursed; the button itself
+      // disables if the player can't afford it.
+      const wornCursed = ["weapon", "armor", "shield", "ring"]
+        .map((s) => p.equip[s]).filter((g) => g && g.cursed);
+      if (this.mode === "camp" && wornCursed.length) {
+        const curseCost = 15 + 10 * wornCursed.length;
+        const curseRow = document.createElement("div");
+        curseRow.className = "shop-row";
+        const curseNameEl = document.createElement("span");
+        curseNameEl.className = "shop-name";
+        curseNameEl.textContent = "Lift curses";
+        const cursePriceEl = document.createElement("span");
+        cursePriceEl.className = "shop-price";
+        cursePriceEl.textContent = `${curseCost}g`;
+        const curseBtn = document.createElement("button");
+        curseBtn.className = "shop-buy";
+        curseBtn.textContent = "Cleanse";
+        curseBtn.disabled = p.gold < curseCost;
+        curseBtn.onclick = () => {
+          if (p.gold < curseCost) return;
+          p.gold -= curseCost;
+          this.removeCurses();
+          this.log(`The healer lifts your curse${wornCursed.length > 1 ? "s" : ""}. (−${curseCost}g)`, "good");
+          audio.levelUp();
+          this.spawnParticles(this.player.rx, this.player.ry, "#fff0a0", 16, true);
+          this.updateHud();
+          this.renderInventory();
+          this.openShop(npc);
+        };
+        curseRow.appendChild(curseNameEl);
+        curseRow.appendChild(cursePriceEl);
+        curseRow.appendChild(curseBtn);
+        itemsEl.appendChild(curseRow);
+      }
     } else if (npc.npcType === "merchant") {
       // Merchant's purse (finite — it limits how much it can buy from you).
       purseEl.textContent = `Purse: ${npc.gold}g`;
