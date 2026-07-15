@@ -167,16 +167,25 @@ export function makeItem(key, x, y, depth) {
   } else if (key === "artifact") {
     base.category = "artifact"; base.name = "the Forgotten Relic";
   } else if (key === "scroll") {
-    // One-shot consumables; the effect lives in Game.useScroll.
+    // One-shot consumables; the effect lives in Game.useScroll. Weighted (not
+    // uniform) so the return scroll — the main limiter on camp round-trips —
+    // stays uncommon relative to the rest.
     base.category = "consumable"; base.sprite = "scroll";
     const kinds = [
-      ["teleport", "scroll of teleport"],
-      ["map",      "scroll of magic mapping"],
-      ["enchant",  "scroll of enchantment"],
-      ["identify", "scroll of identify"],
-      ["uncurse",  "scroll of remove curse"],
+      ["teleport", "scroll of teleport", 3],
+      ["map",      "scroll of magic mapping", 3],
+      ["enchant",  "scroll of enchantment", 3],
+      ["identify", "scroll of identify", 3],
+      ["uncurse",  "scroll of remove curse", 3],
+      ["return",   "scroll of return", 1],
     ];
-    const pick = kinds[Math.floor(rng() * kinds.length)];
+    const total = kinds.reduce((s, k) => s + k[2], 0);
+    let roll = rng() * total;
+    let pick = kinds[kinds.length - 1];
+    for (const k of kinds) {
+      roll -= k[2];
+      if (roll <= 0) { pick = k; break; }
+    }
     base.scroll = pick[0]; base.name = pick[1];
   } else if (key === "wand") {
     // Charge-based caster; fired from the hotbar (Game.useWand).

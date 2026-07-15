@@ -1,7 +1,7 @@
 // Core game: state, turn loop, combat, rendering, input, HUD.
 
 import { drawSprite, drawFrame, STRIPS, SPR, TILE } from "./assets.js";
-import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER, GATE } from "./dungeon.js";
+import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER, GATE, WAYSTONE } from "./dungeon.js";
 import { buildCamp, CAMP_THEME } from "./camp.js";
 import { populate, makeMonster, makeBoss, makeItem, ringDesc, CLASSES } from "./entities.js";
 import { makeNpc, genWares } from "./npc.js";
@@ -156,7 +156,7 @@ export class Game {
     this.depth++;
     this.theme = themeForDepth(this.depth);
     seedRng((this.seed ^ (this.depth * 2654435761)) >>> 0);
-    this.dungeon = new Dungeon(MAP_W, MAP_H, this.theme.strategy);
+    this.dungeon = new Dungeon(MAP_W, MAP_H, this.theme.strategy, this.depth);
     const spawn = this.dungeon.startPos;
     const p = this.player;
     p.x = spawn.x; p.y = spawn.y; p.rx = spawn.x; p.ry = spawn.y;
@@ -532,6 +532,11 @@ export class Game {
       // depth we left rather than one deeper.
       if (this.mode === "camp") this.leaveCamp();
       else this.beginDescent();
+      return;
+    }
+
+    if (this.dungeon.get(p.x, p.y) === WAYSTONE) {
+      this.enterCamp();
       return;
     }
 
@@ -1200,6 +1205,15 @@ export class Game {
       this.renderInventory();
       return true;
     }
+    if (it.scroll === "return") {
+      // enterCamp() itself no-ops (returns false) while already in camp, mid-
+      // transition, dead, etc. — mirror that here so the scroll isn't spent.
+      if (!this.enterCamp()) {
+        this.log("You are already at the camp — the scroll fizzles.", "dim");
+        return false;
+      }
+      return true;
+    }
     return false;
   }
 
@@ -1684,6 +1698,7 @@ export class Game {
           }
           if (tile === STAIRS) drawSprite(ctx, theme.stairs, sx, sy, CELL);
           if (tile === SHRINE) this.drawShrine(sx, sy);
+          if (tile === WAYSTONE) this.drawWaystone(sx, sy);
         }
 
         if (!d.visible[i]) {
@@ -1888,6 +1903,7 @@ export class Game {
         else if (t === SHRINE) col = "#7fe6ff";
         else if (t === WATER) col = "#1a3d80";
         else if (t === GATE) col = "#9aa6b8";
+        else if (t === WAYSTONE) col = "#b48cff";
         else col = "#69697e";
         mm.globalAlpha = d.visible[i] ? 1 : 0.5;
         mm.fillStyle = col;
@@ -1977,6 +1993,46 @@ export class Game {
     ctx.beginPath();
     ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
     ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Pulsing rune-stone marking a waystone (M19) — stepping onto it fades to
+  // camp, same as the scroll of return. Violet to read distinctly from the
+  // shrine's cyan.
+  drawWaystone(sx, sy) {
+    const ctx = this.ctx;
+    const pulse = 0.5 + 0.5 * Math.sin(this.now / 300);
+    const cx = sx + CELL / 2;
+    const cy = sy + CELL / 2;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.2 + 0.3 * pulse;
+    ctx.fillStyle = "#b48cff";
+    ctx.beginPath();
+    ctx.arc(cx, cy, CELL * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = "#2a1f3d";
+    ctx.strokeStyle = "#d9c2ff";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, cy + 6);
+    ctx.lineTo(cx - 5, cy - 2);
+    ctx.lineTo(cx, cy - 7);
+    ctx.lineTo(cx + 5, cy - 2);
+    ctx.lineTo(cx + 4, cy + 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.85 * (0.6 + 0.4 * pulse);
+    ctx.strokeStyle = "#eadcff";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 1, 2.5 + pulse, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -2464,6 +2520,7 @@ export class Game {
     const base = { potion: 25, weapon: 40, armor: 35, shield: 30, key: 20,
       scroll: 30, wand: 55, ring: 60 };
     let price = (base[it.key] || 25) + (it.bonus || 0) * 3;
+    if (it.key === "scroll" && it.scroll === "return") price = 80; // scarce — the camp round-trip limiter
     if (it.category === "wand") price += (it.charges || 0) * 4;
     if (it.slot === "ring") price += (it.power || 0); // affix strength
     return price;

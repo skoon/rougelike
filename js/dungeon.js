@@ -9,6 +9,7 @@ export const LOCKED = 3; // locked door: blocks movement + sight until a key ope
 export const SHRINE = 4; // steppable tile granting a one-time blessing
 export const WATER = 5; // walkable hazard: cold water deals 1 damage per step
 export const GATE = 6; // portcullis sealing a treasure alcove until its lever is pulled
+export const WAYSTONE = 7; // steppable shortcut back to camp (M19); always walkable
 
 const rnd = (n) => Math.floor(rng() * n);
 const rint = (min, max) => min + rnd(max - min + 1);
@@ -44,9 +45,10 @@ class Room {
 }
 
 export class Dungeon {
-  constructor(w, h, strategy = "rooms") {
+  constructor(w, h, strategy = "rooms", depth = 0) {
     this.w = w;
     this.h = h;
+    this.depth = depth; // 0 = unknown/not-a-dungeon-floor (e.g. the camp map); drives waystone placement
     this.tiles = new Array(w * h).fill(WALL);
     this.decor = new Array(w * h).fill(null); // visual-only floor decoration
     this.objs = new Array(w * h).fill(null);  // interactive objects (chests, barrels)
@@ -65,6 +67,7 @@ export class Dungeon {
     this.gateCells = []; // interior of the lever-gated alcove (if any)
     this.gatePos = null; // {x,y} of the GATE tile (if any)
     this.leverPos = null; // {x,y} of the lever that opens it (if any)
+    this.waystonePos = null; // {x,y} of the WAYSTONE tile (if any)
     this.strategy = strategy;
     this.generate(strategy);
   }
@@ -76,7 +79,7 @@ export class Dungeon {
 
   isWalkable(x, y) {
     const t = this.get(x, y);
-    return t === FLOOR || t === STAIRS || t === SHRINE || t === WATER;
+    return t === FLOOR || t === STAIRS || t === SHRINE || t === WATER || t === WAYSTONE;
   }
 
   getObj(x, y) { return this.inBounds(x, y) ? this.objs[this.idx(x, y)] : null; }
@@ -98,6 +101,7 @@ export class Dungeon {
     this._placeGate();
     this._placeInteractables();
     this._placeTraps();
+    this._placeWaystone();
   }
 
   // --- Strategy: random non-overlapping rooms joined by L-corridors. ---
@@ -468,6 +472,31 @@ export class Dungeon {
         { type: "crate" };
       this.objs[this.idx(cells[i].x, cells[i].y)] = obj;
     }
+  }
+
+  // Every 3rd depth, drop a waystone within ~4 tiles of the stairs — an early
+  // shortcut back to camp (M19). Always walkable, so placement can never seal
+  // anything off; skip silently if no free cell fits nearby (mirrors the
+  // "just skip" style of _placeSpecials/_placeGate). `depth` comes from the
+  // constructor, so the camp map (depth 0) and depths not divisible by 3
+  // never get one.
+  _placeWaystone() {
+    if (!this.depth || this.depth % 3 !== 0 || !this.stairs || !this.floors.length) return;
+    const stairs = this.stairs, start = this.startPos;
+    const cands = this.floors.filter((c) => {
+      if (c.x === stairs.x && c.y === stairs.y) return false;
+      if (c.x === start.x && c.y === start.y) return false;
+      if (this.objs[this.idx(c.x, c.y)]) return false;
+      if (this.decor[this.idx(c.x, c.y)]) return false;
+      if (this.traps.has(this.idx(c.x, c.y))) return false;
+      return Math.abs(c.x - stairs.x) + Math.abs(c.y - stairs.y) <= 4;
+    });
+    if (!cands.length) return;
+    const spot = cands[rnd(cands.length)];
+    this.set(spot.x, spot.y, WAYSTONE);
+    this.waystonePos = { x: spot.x, y: spot.y };
+    // No longer plain FLOOR — keep it out of the spawn candidate list.
+    this.floors = this.floors.filter((c) => !(c.x === spot.x && c.y === spot.y));
   }
 
   // Scatter hidden spike traps on floor cells (revealed when stepped on).
