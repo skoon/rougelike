@@ -140,7 +140,8 @@ Post-1.0 milestones (M12–M17) are independent except where noted
 (M14 builds on M13; M17 extends the M7 shop). Suggested order by impact-per-effort:
 **M12** (abilities) → **M15** (daily run, cheap) → **M17** (selling) →
 **M13 → M14** (loot overhaul pair) → **M16** (resource clock).
-**M16** (resource clock: torchlight & rations) is the last remaining milestone.
+**M16** (resource clock: torchlight & rations) and **M19** (surface base camp, in
+progress) are the last remaining milestones.
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
@@ -716,6 +717,74 @@ approach to the down-stairs, making a floor impossible to descend without a work
   - Files: `test/stairs.js`. Run: `node test/stairs.js [maps]`.
   - Done when: a large run (≥1000 maps) reports zero stairs-blocked failures. ✔ (4500 maps,
     0 door failures, 0 unsafe placements, 3.3% naive-blocker rate documented.)
+
+### M19 — Surface Base Camp
+
+**Goal:** a retreat between dives. The player can leave the dungeon for a hand-authored
+outdoor camp — rest at the campfire, buy/sell/lift curses with the camp NPCs — then
+return to the depth they left, regenerated fresh from the same per-floor seed. Uses the
+previously-unused Kenney Base Pack for outdoor art.
+
+> Context: `game.mode` is `"dungeon" | "camp"`; `game.campReturnDepth` holds the depth
+> to rebuild on return. `js/camp.js`'s `buildCamp()` returns a real `Dungeon` (same
+> `tiles`/`visible`/`explored`/`isWalkable`/`computeFov` surface) built from a 30×20
+> hand-authored legend, fully lit and fully explored (no fog of war at the surface).
+> `Game.enterCamp()`/`_swapToCamp()`/`leaveCamp()` drive the mode switch through the
+> existing fade-transition machinery; `leaveCamp()` steps `depth` back one and calls
+> `nextLevel()`, which re-seeds deterministically — identical layout, fresh monsters
+> and loot.
+
+- [x] **M19-T1 — Base Pack sprite mapping.** `SPR` entries for camp terrain (grass ×2,
+  path, tree, fence, 2×2 merchant/healer tents, cave mouth, campfire) cropped from
+  `assets/Roguelike Base Pack/Spritesheet/roguelikeSheet_transparent.png` at the
+  standard 17px stride.
+  - Files: `js/assets.js` (`SHEETS.base`, `SPR` entries under `// --- camp (base
+    sheet) ---`).
+- [x] **M19-T2 — Camp map, mode switch & floor regeneration.** `js/camp.js`'s
+  `buildCamp()` parses the legend into a `Dungeon`-shaped object (2×2 tent footprints,
+  campfire light, cave-mouth-as-stairs so click-to-move/minimap/the stairs check all
+  work unchanged); `Game.enterCamp()`/`_swapToCamp()`/`leaveCamp()` swap `this.dungeon`,
+  reposition the player, clear `monsters`/`items` (kept as empty arrays, never `null`),
+  and place the two camp NPCs, reusing the existing transition fade.
+  - Files: `js/camp.js` (new), `js/game.js` (`enterCamp`, `_swapToCamp`, `leaveCamp`,
+    `mode`/`campReturnDepth` state, `turn()` mode branch).
+  - Done when: `game.enterCamp()` fades to a rendered, walkable camp; the cave mouth
+    returns to the same depth number with the identical seeded layout. ✔ (verified
+    live).
+- [ ] **M19-T3 — Scroll of Return + waystone.** A consumable scroll (usable anywhere)
+  and a waystone tile placed near the stairs every 3rd floor, both entering camp via
+  the reverse descent fade.
+  - Files: `js/entities.js`, `js/dungeon.js`, `js/game.js` (`useScroll`, `turn()`
+    waystone step, waystone render), `js/npc.js`.
+- [ ] **M19-T4 — Camp services.** Campfire (free full heal + clear statuses, once per
+  visit), healer tent (lift curses for gold via a shared `Game.removeCurses()`),
+  merchant tent (stocked purse including Return scrolls).
+  - Files: `js/npc.js`, `js/game.js` (`openShop` healer branch, `removeCurses()`,
+    campfire interaction in `turn()`, camp NPC stock/purse setup in `_swapToCamp`).
+- [x] **M19-T5 — Ambience, recap & docs polish.** The camp cross-fades to a brighter
+  procedural pad (`audio.startAmbient("camp")`, no new asset files) and restores the
+  dungeon bed on leaving; a dusk-gradient sky letterbox replaces the void black behind
+  the camp map; the campfire's warm light pulse falls out of the existing generic torch/
+  brazier lighting loop (`d.lights`) for free, since T2 already registers it there — no
+  new render code needed for the pulse itself. A `campVisits` counter (reset in
+  `start()`, incremented in `_swapToCamp()`) is threaded through `buildRun`/`renderRecap`
+  as a "Camp visits" stat.
+  - Files: `js/audio.js` (`startAmbient(kind)`), `js/game.js` (camp branch of `render()`,
+    `buildRun`, `renderRecap`, `_swapToCamp`/`leaveCamp` ambience calls, one-line
+    `campVisits` reset in `start()`), `README.md`, `index.html` (help footer).
+  - Note: the camp map (30×20) is comfortably larger than the view (21×15) in both
+    dimensions, so `centerCamera`'s clamp (unchanged, out of this task's scope) always
+    keeps the full viewport inside the map — the sky letterbox's out-of-bounds region is
+    therefore not reachable on screen with the current map/view sizing. The code is
+    correct and mode-aware (verified by driving the real `render()` through a headless
+    Node harness and recording every `fillRect`/gradient call — `preview_start` bound to
+    the main repo root, not this worktree, so browser pixel probes weren't available)
+    but has no visible effect until the camp map shrinks, the view grows, or the camera
+    clamp changes — none of which were in scope here.
+- [ ] **M19-T6 — Regression tests & balance pass.** `test/camp.js`: floor-regeneration
+  determinism, camp-map reachability invariants, waystone placement invariants, and
+  merchant economy sanity; a `test/sim.js` balance check.
+  - Files: `test/camp.js` (new).
 
 ---
 
