@@ -107,7 +107,7 @@ export class Game {
     this.depth = 0;
     this.mode = "dungeon";    // "dungeon" | "camp" — the camp is a mode, not a depth
     this.campReturnDepth = 0; // depth the camp was entered from (leaveCamp rebuilds it)
-    this.campRested = false; // campfire rest is once-per-visit; reset by _swapToCamp
+    this.campVisits = 0;      // M19-T5 recap stat — count of enterCamp() this run
     this.player = {
       kind: "player",
       // Layered paper-doll: body + leather armor + ginger hair.
@@ -661,6 +661,9 @@ export class Game {
     this.theme = CAMP_THEME;
     this.isBossFloor = false;
     this.dungeon = buildCamp();
+    this.campVisits = (this.campVisits || 0) + 1; // recap stat, reset in start()
+    audio.stopAmbient();
+    audio.startAmbient("camp");
 
     const p = this.player;
     const s = this.dungeon.startPos;
@@ -703,6 +706,8 @@ export class Game {
     audio.descend();
     this.beginTransition(() => {
       this.mode = "dungeon";
+      audio.stopAmbient();
+      audio.startAmbient("dungeon");
       // nextLevel() increments, so step back one and let it re-derive the floor:
       // it re-seeds from (seed ^ depth * 2654435761), producing the identical
       // layout with fresh monsters and loot, and correctly re-runs the
@@ -937,6 +942,7 @@ export class Game {
       seed: this.seedDisplay,
       ms: Date.now() - this.runStart,
       daily: this.dailyDate || null,
+      campVisits: this.campVisits || 0,
     };
   }
 
@@ -1000,6 +1006,7 @@ export class Game {
       stat("Gold", run.gold) +
       stat("Kills", run.kills) +
       stat("Time", dur) +
+      stat("Camp visits", run.campVisits || 0) +
       `</div>` +
       `<div class="recap-seed">Seed ${run.seed}` +
       (prev && !isPB ? ` · best depth ${prev.depth}, Lv ${prev.level}` : "") +
@@ -1673,7 +1680,17 @@ export class Game {
   render() {
     const ctx = this.ctx;
     const d = this.dungeon;
-    ctx.fillStyle = "#06050c";
+    if (this.mode === "camp") {
+      // Dusk sky for any out-of-bounds edge the camera's overdraw margin
+      // exposes around the camp map, instead of the dungeon's void black.
+      const grd = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+      grd.addColorStop(0, "#2c3f6b");
+      grd.addColorStop(0.55, "#8a5d82");
+      grd.addColorStop(1, "#d98a52");
+      ctx.fillStyle = grd;
+    } else {
+      ctx.fillStyle = "#06050c";
+    }
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     const camX = this.cam.x;

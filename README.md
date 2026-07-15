@@ -27,6 +27,7 @@ python -m http.server 8123
 | Pause             | P or Esc            |
 | Descend           | Step onto the stairs|
 | Restart           | R                   |
+| To camp / back down | Read a Scroll of Return, or step onto a waystone (found near the stairs every 3rd floor) to retreat to camp; step onto the cave mouth in camp to return to the same depth |
 
 The ⚙ settings panel (footer) holds volume (master/music/SFX), mute, screen
 shake, an on-screen touch d-pad toggle (auto-on for touch devices), readability
@@ -53,6 +54,12 @@ movement/wait/inventory/pause keys. All settings persist across sessions.
   portraits), animated chests, smashable barrels/pots/crates, hidden spike traps
   that stay sprung, cold water, flickering torches and braziers, and lever-opened
   portcullis vaults hiding treasure.
+- A surface **camp** to retreat to between dives — read a Scroll of Return or step
+  onto a waystone (near the stairs every 3rd floor) to fold back to a lit, safe
+  clearing with its own dusk sky and a brighter ambient bed. Rest at the campfire
+  for a free full heal, lift curses at the healer's tent, and buy/sell at the
+  merchant's — then step through the cave mouth to drop back into the same depth
+  (regenerated fresh, same seed). The recap tracks how many times you camped.
 - Equipment (weapons, armor, shields, and passive **rings** — regen / crit / warding)
   with tiers that scale by depth, auto-equipped when better and managed in an inventory
   panel (I). Carried potions, **scrolls** (teleport / magic map / enchant / identify /
@@ -71,7 +78,8 @@ movement/wait/inventory/pause keys. All settings persist across sessions.
 - Animated actors: directional facing, idle bob, attack lunges, hit flashes and
   fade-out deaths.
 - Audio: synthesized SFX for movement, combat, pickups, level-ups and descent,
-  plus a looping dark-ambience track.
+  plus a looping dark-ambience track underground that cross-fades to a brighter
+  procedural pad at the surface camp.
 - Game feel: floating damage/heal numbers, blood and sparkle particles, screen
   shake, a corner minimap, level-transition fades, and click-to-move pathfinding
   that halts when something dangerous comes into view.
@@ -112,8 +120,9 @@ development still picks up edits immediately.)
 Code by the project author. Art and audio assets remain the property of their
 creators — see each pack's `License.txt` under `assets/`:
 
-- **Kenney Roguelike packs** (Dungeon, Characters) — [kenney.nl](https://kenney.nl/),
-  released under **CC0** (public domain).
+- **Kenney Roguelike packs** (Dungeon, Characters, Base) — [kenney.nl](https://kenney.nl/),
+  released under **CC0** (public domain). The Base Pack supplies the surface camp's
+  outdoor terrain, tents, fences, and campfire.
 - **Tiny Dungeons – Biome Dungeon Pack** (animated objects & monsters) — by
   **Roupiks**, [roupiks.itch.io](https://roupiks.itch.io/). Free for commercial and
   non-commercial use; redistribution/resale of the assets is not permitted.

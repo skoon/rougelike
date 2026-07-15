@@ -121,12 +121,47 @@ class AudioManager {
                   this._tone({ freq: f, type: "sawtooth", dur: 0.45, gain: 0.2, when: i * 0.18 })); }
 
   // ------------------------------------------------------------ ambient bed
-  startAmbient() {
+  // `kind`: "dungeon" (default, the mp3 track) or "camp" (M19 — a brighter
+  // procedural pad, kept file-free to avoid new licensing/build/precache
+  // entries). Callers cross-fade by calling stopAmbient() then startAmbient()
+  // with the new kind; stopAmbient clears `this.ambient` synchronously so the
+  // new bed can start ramping in immediately while the old one fades out.
+  startAmbient(kind = "dungeon") {
     if (!this.ready || this.ambient) return;
     const t = this.ctx.currentTime;
     const g = this.ctx.createGain();
     g.gain.value = 0;
     g.connect(this.musicGain);
+
+    if (kind === "camp") {
+      // Bright open-air pad: a detuned fifth + a shimmering octave through a
+      // slow-sweeping lowpass — daylight to the dungeon drone's dark rumble.
+      const filt = this.ctx.createBiquadFilter();
+      filt.type = "lowpass";
+      filt.frequency.value = 1500;
+      filt.Q.value = 0.6;
+      filt.connect(g);
+      const o1 = this.ctx.createOscillator();
+      o1.type = "triangle";
+      o1.frequency.value = 220; // A3
+      const o2 = this.ctx.createOscillator();
+      o2.type = "triangle";
+      o2.frequency.value = 220 * 1.5; // E4 — open fifth, consonant
+      const o3 = this.ctx.createOscillator();
+      o3.type = "sine";
+      o3.frequency.value = 220 * 2.01; // gently-detuned octave shimmer
+      o1.connect(filt); o2.connect(filt); o3.connect(filt);
+      const lfo = this.ctx.createOscillator();
+      lfo.frequency.value = 0.08;
+      const lfoGain = this.ctx.createGain();
+      lfoGain.gain.value = 280;
+      lfo.connect(lfoGain);
+      lfoGain.connect(filt.frequency);
+      o1.start(t); o2.start(t); o3.start(t); lfo.start(t);
+      g.gain.linearRampToValueAtTime(0.32, t + 2.5);
+      this.ambient = { o1, o2, o3, lfo, g, kind };
+      return;
+    }
 
     const el = new Audio(MUSIC_FILE);
     el.loop = true;
@@ -134,41 +169,16 @@ class AudioManager {
     src.connect(g);
     el.play().catch(() => {});
     g.gain.linearRampToValueAtTime(0.8, t + 2.5);
-    this.ambient = { el, src, g };
-
-    /* Procedural drone — disabled in favour of the mp3 track above.
-    const filt = this.ctx.createBiquadFilter();
-    filt.type = "lowpass";
-    filt.frequency.value = 380;
-    filt.Q.value = 2;
-    filt.connect(g);
-    const o1 = this.ctx.createOscillator();
-    o1.type = "sawtooth";
-    o1.frequency.value = 55;
-    const o2 = this.ctx.createOscillator();
-    o2.type = "sawtooth";
-    o2.frequency.value = 55.4;
-    o1.connect(filt);
-    o2.connect(filt);
-    const lfo = this.ctx.createOscillator();
-    lfo.frequency.value = 0.06;
-    const lfoGain = this.ctx.createGain();
-    lfoGain.gain.value = 140;
-    lfo.connect(lfoGain);
-    lfoGain.connect(filt.frequency);
-    o1.start(t); o2.start(t); lfo.start(t);
-    g.gain.linearRampToValueAtTime(0.5, t + 2.5);
-    this.ambient = { o1, o2, lfo, g };
-    */
+    this.ambient = { el, src, g, kind };
   }
 
   stopAmbient() {
     if (!this.ambient) return;
-    const { el, o1, o2, lfo, g } = this.ambient;
+    const { el, o1, o2, o3, lfo, g } = this.ambient;
     const t = this.ctx.currentTime;
     g.gain.linearRampToValueAtTime(0, t + 0.5);
     if (el) setTimeout(() => { try { el.pause(); } catch {} }, 600);
-    if (o1) [o1, o2, lfo].forEach((o) => { try { o.stop(t + 0.6); } catch {} });
+    [o1, o2, o3, lfo].forEach((o) => { if (o) try { o.stop(t + 0.6); } catch {} });
     this.ambient = null;
   }
 }
