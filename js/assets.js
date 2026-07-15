@@ -8,6 +8,7 @@ const STRIDE = 17;
 const SHEETS = {
   dungeon: "assets/Roguelike Dungeon Pack/Spritesheet/roguelikeDungeon_transparent.png",
   chars: "assets/Roguelike Characters Pack/Spritesheet/roguelikeChar_transparent.png",
+  base: "assets/Roguelike Base Pack/Spritesheet/roguelikeSheet_transparent.png",
 };
 
 // Animated frame strips (no margins). `fw`/`fh` are the per-frame pixel size;
@@ -96,6 +97,27 @@ export const SPR = {
 
   // Actors are composited from layered Characters-sheet tiles; see the
   // `layers` arrays in entities.js and Game.drawActor (js/game.js).
+
+  // --- camp (base sheet) ---
+  grass: ["base", 5, 1],
+  grassAlt: ["base", 9, 1],
+  path: ["base", 6, 1],
+  tree: ["base", 13, 9],
+  fence: ["base", 47, 23],
+  caveMouth: ["base", 40, 8],
+  campfire: ["base", 14, 8],
+
+  // Tents are 2x2 sprites on the base sheet, so each is four quadrants drawn
+  // as a block; a lone quadrant is just a coloured triangle. The door sits at
+  // the bottom centre, spanning the BL/BR seam.
+  tentMerchantTL: ["base", 48, 10],
+  tentMerchantTR: ["base", 49, 10],
+  tentMerchantBL: ["base", 48, 11],
+  tentMerchantBR: ["base", 49, 11],
+  tentHealerTL: ["base", 46, 10],
+  tentHealerTR: ["base", 47, 10],
+  tentHealerBL: ["base", 46, 11],
+  tentHealerBR: ["base", 47, 11],
 };
 
 // Draw a sprite into ctx at device pixel position (dx,dy) scaled to `size`.

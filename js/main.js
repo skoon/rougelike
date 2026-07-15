@@ -173,6 +173,7 @@ async function boot() {
   }
 
   const game = new Game(canvas);
+  window.game = game; // dev handle: poke the running game from the console
   setupSettings(game);
 
   const best = getBest();

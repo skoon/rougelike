@@ -13,6 +13,7 @@ const SHELL = [
   "./css/style.css",
   "./js/main.js",
   "./js/game.js",
+  "./js/camp.js",
   "./js/dungeon.js",
   "./js/entities.js",
   "./js/npc.js",

@@ -2,6 +2,7 @@
 
 import { drawSprite, drawFrame, STRIPS, SPR, TILE } from "./assets.js";
 import { Dungeon, WALL, FLOOR, STAIRS, LOCKED, SHRINE, WATER, GATE } from "./dungeon.js";
+import { buildCamp, CAMP_THEME } from "./camp.js";
 import { populate, makeMonster, makeBoss, makeItem, ringDesc, CLASSES } from "./entities.js";
 import { makeNpc, genWares } from "./npc.js";
 import { findPath } from "./pathfind.js";
@@ -104,6 +105,8 @@ export class Game {
     this.cls = cls !== undefined ? cls : (this.cls || "warrior");
     this.dailyDate = dailyDate || null;
     this.depth = 0;
+    this.mode = "dungeon";    // "dungeon" | "camp" — the camp is a mode, not a depth
+    this.campReturnDepth = 0; // depth the camp was entered from (leaveCamp rebuilds it)
     this.player = {
       kind: "player",
       // Layered paper-doll: body + leather armor + ginger hair.
@@ -525,7 +528,10 @@ export class Game {
     if (this.dungeon.get(p.x, p.y) === SHRINE) this.useShrine();
 
     if (this.dungeon.get(p.x, p.y) === STAIRS) {
-      this.beginDescent();
+      // The camp's cave mouth is a STAIRS tile, but it leads back down to the
+      // depth we left rather than one deeper.
+      if (this.mode === "camp") this.leaveCamp();
+      else this.beginDescent();
       return;
     }
 
@@ -576,15 +582,20 @@ export class Game {
     this.spawnParticles(p.rx, p.ry, "#7fe6ff", 14, true);
   }
 
-  // Kick off a fade-to-black transition; the new level is generated at the
-  // midpoint (while the screen is fully dark) so the swap is never visible.
+  // Kick off a fade-to-black transition. `target()` runs at the midpoint (while
+  // the screen is fully dark) so the map swap is never visible. `caption`/`sub`
+  // override the fade-in banner, which otherwise names the new depth + theme.
+  beginTransition(target, caption = null, sub = null) {
+    this.autoPath = null;
+    this.busyUntil = Infinity; // lock input for the whole transition
+    this.transition = { phase: "out", alpha: 0, duration: 420, target, caption, sub };
+    this.transitionStart = this.now;
+  }
+
   beginDescent() {
     this.log("You find a staircase leading deeper.", "good");
     audio.descend();
-    this.autoPath = null;
-    this.busyUntil = Infinity; // lock input for the whole transition
-    this.transition = { phase: "out", alpha: 0, duration: 420 };
-    this.transitionStart = this.now;
+    this.beginTransition(() => this.nextLevel());
   }
 
   updateTransition() {
@@ -593,7 +604,7 @@ export class Game {
     tr.alpha = tr.phase === "out" ? k : 1 - k;
     if (k < 1) return;
     if (tr.phase === "out") {
-      this.nextLevel(); // generate the next floor while the screen is black
+      tr.target(); // swap the map while the screen is black
       tr.phase = "in";
       tr.alpha = 1;
       this.transitionStart = this.now;
@@ -601,6 +612,68 @@ export class Game {
       this.transition = null;
       this.busyUntil = 0; // unlock input
     }
+  }
+
+  // ---------------------------------------------------------------- the camp
+  // Retreat from the dungeon to the surface camp (M19). The floor being left is
+  // not saved: leaveCamp regenerates it from the run seed, which is what makes
+  // the camp cheap — see `nextLevel`'s per-floor `seedRng`.
+  enterCamp() {
+    if (!this.player || this.over || this.transition || this.mode === "camp")
+      return false;
+    this.log("The world folds around you — you surface at the camp.", "gold");
+    audio.levelUp();
+    this.beginTransition(() => this._swapToCamp(), "The Camp", "a haven above the dark");
+    return true;
+  }
+
+  // Midpoint of the enterCamp fade: swap the dungeon out for the camp map.
+  _swapToCamp() {
+    this.campReturnDepth = this.depth;
+    this.mode = "camp";
+    this.theme = CAMP_THEME;
+    this.isBossFloor = false;
+    this.dungeon = buildCamp();
+
+    const p = this.player;
+    const s = this.dungeon.startPos;
+    p.x = s.x; p.y = s.y; p.rx = s.x; p.ry = s.y;
+
+    // Nothing hostile, nothing loose on the ground. `monsters` must stay an
+    // array — enemyTurn, the minimap and nearestVisibleMonster all iterate it.
+    this.monsters = [];
+    this.items = [];
+
+    // The two camp NPCs stand on the path in front of their 2x2 tents (the
+    // camp legend places them; the tents themselves are impassable).
+    // M19-T4: camp stock/purse/services — merchant wares + purse, healer
+    // uncurse rows, and the campfire rest hang off these instances.
+    const spots = this.dungeon.npcSpots;
+    this.npcs = [
+      makeNpc("merchant", spots.merchant.x, spots.merchant.y),
+      makeNpc("healer", spots.healer.x, spots.healer.y),
+    ];
+
+    this.dungeon.computeFov(p.x, p.y, FOV_RADIUS); // no-op: the camp is fully lit
+    this.centerCamera(true);
+    this.updateHud();
+  }
+
+  // Step into the cave mouth: rebuild the floor we left and drop back onto it.
+  leaveCamp() {
+    if (this.mode !== "camp" || this.transition) return false;
+    this.log("You shoulder your pack and head back below.", "dim");
+    audio.descend();
+    this.beginTransition(() => {
+      this.mode = "dungeon";
+      // nextLevel() increments, so step back one and let it re-derive the floor:
+      // it re-seeds from (seed ^ depth * 2654435761), producing the identical
+      // layout with fresh monsters and loot, and correctly re-runs the
+      // depth-triggered merchant / healer / boss / win-artifact logic.
+      this.depth = this.campReturnDepth - 1;
+      this.nextLevel();
+    });
+    return true;
   }
 
   enemyTurn() {
@@ -1432,10 +1505,12 @@ export class Game {
   // ---------------------------------------------------------------- render
   centerCamera(snap) {
     const p = this.player;
+    const d = this.dungeon;
     let cx = p.rx - (VIEW_W - 1) / 2;
     let cy = p.ry - (VIEW_H - 1) / 2;
-    cx = Math.max(0, Math.min(MAP_W - VIEW_W, cx));
-    cy = Math.max(0, Math.min(MAP_H - VIEW_H, cy));
+    // Clamp to the current map, not MAP_W/MAP_H — the camp is smaller.
+    cx = Math.max(0, Math.min(d.w - VIEW_W, cx));
+    cy = Math.max(0, Math.min(d.h - VIEW_H, cy));
     if (snap) { this.cam.x = cx; this.cam.y = cy; }
     else {
       this.cam.x += (cx - this.cam.x) * 0.25;
@@ -1580,6 +1655,10 @@ export class Game {
         const theme = this.theme;
         if (tile === WALL) {
           drawSprite(ctx, theme.wall, sx, sy, CELL);
+          // Camp trees/fences are decor drawn over the ground sprite; dungeon
+          // walls never carry decor, so this is a no-op underground.
+          const dec = d.decor[i];
+          if (dec) drawSprite(ctx, SPR[dec], sx, sy, CELL);
         } else if (tile === LOCKED) {
           drawSprite(ctx, theme.floor, sx, sy, CELL);
           drawSprite(ctx, SPR.door, sx, sy, CELL);
@@ -1792,7 +1871,9 @@ export class Game {
   // Top-corner minimap drawn from explored/visible state.
   renderMinimap() {
     const d = this.dungeon;
-    const s = this.miniScale;
+    // Fit the current map to the widget: 3px/tile for the dungeon (unchanged),
+    // larger for the smaller camp map.
+    const s = Math.max(1, Math.floor(Math.min(this.mini.width / d.w, this.mini.height / d.h)));
     const mm = this.miniCtx;
     mm.clearRect(0, 0, this.mini.width, this.mini.height);
     for (let y = 0; y < d.h; y++) {
@@ -2075,7 +2156,8 @@ export class Game {
     ctx.restore();
   }
 
-  // Black fade with a "Depth N" caption as the new floor fades in.
+  // Black fade with a caption as the new map fades in — the transition's own
+  // caption/sub if it supplied one, else the new floor's depth and theme.
   drawTransition(ctx) {
     const a = this.transition.alpha;
     const w = this.canvas.width;
@@ -2084,6 +2166,7 @@ export class Game {
     ctx.fillRect(0, 0, w, h);
 
     if (this.transition.phase === "in") {
+      const tr = this.transition;
       const textA = Math.max(0, (a - 0.15) / 0.85);
       ctx.save();
       ctx.globalAlpha = textA;
@@ -2091,8 +2174,12 @@ export class Game {
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#e8e4d8";
       ctx.font = "bold 30px 'Trebuchet MS', system-ui, sans-serif";
-      ctx.fillText(`Depth ${this.depth}`, w / 2, h / 2 - 10);
-      if (this.isBossFloor) {
+      ctx.fillText(tr.caption || `Depth ${this.depth}`, w / 2, h / 2 - 10);
+      if (tr.sub) {
+        ctx.fillStyle = "#d98e3a";
+        ctx.font = "italic 17px 'Trebuchet MS', system-ui, sans-serif";
+        ctx.fillText(tr.sub, w / 2, h / 2 + 16);
+      } else if (this.isBossFloor) {
         ctx.fillStyle = "#e0594b";
         ctx.font = "bold italic 18px 'Trebuchet MS', system-ui, sans-serif";
         ctx.fillText("⚔ Boss Floor ⚔", w / 2, h / 2 + 16);
