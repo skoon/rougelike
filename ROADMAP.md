@@ -751,16 +751,36 @@ previously-unused Kenney Base Pack for outdoor art.
   - Done when: `game.enterCamp()` fades to a rendered, walkable camp; the cave mouth
     returns to the same depth number with the identical seeded layout. ✔ (verified
     live).
-- [ ] **M19-T3 — Scroll of Return + waystone.** A consumable scroll (usable anywhere)
+- [x] **M19-T3 — Scroll of Return + waystone.** A consumable scroll (usable anywhere)
   and a waystone tile placed near the stairs every 3rd floor, both entering camp via
-  the reverse descent fade.
+  the reverse descent fade. `WAYSTONE = 7` (walkable, so it can never seal a floor);
+  `_placeWaystone` is gated `if (!this.depth || this.depth % 3 !== 0 ...)` — the
+  `!this.depth` half matters: `Dungeon`'s new 4th arg defaults to `0`, and `buildCamp`
+  passes no depth, so without it a waystone would spawn **inside the camp**.
+  The scroll is a sub-kind of the generic `scroll` key (weight 1 vs 3 each for the
+  other five ⇒ 6.25% of scrolls); using it in camp returns `false`, costing neither a
+  turn nor the scroll.
   - Files: `js/entities.js`, `js/dungeon.js`, `js/game.js` (`useScroll`, `turn()`
-    waystone step, waystone render), `js/npc.js`.
-- [ ] **M19-T4 — Camp services.** Campfire (free full heal + clear statuses, once per
-  visit), healer tent (lift curses for gold via a shared `Game.removeCurses()`),
-  merchant tent (stocked purse including Return scrolls).
-  - Files: `js/npc.js`, `js/game.js` (`openShop` healer branch, `removeCurses()`,
-    campfire interaction in `turn()`, camp NPC stock/purse setup in `_swapToCamp`).
+    waystone step, `drawWaystone`, `renderMinimap`, `_itemPrice`, `nextLevel` passes
+    `depth` to `Dungeon`), `test/waystone.js` (new).
+  - Done when: waystones appear on depths 3/6/9 and enter camp; the scroll no-ops in
+    camp. ✔ (verified live: depth 3 waystone walkable, off-stairs, entering camp with
+    `campReturnDepth: 3`).
+- [x] **M19-T4 — Camp services.** Campfire (free full heal + clear statuses, once per
+  visit via `campRested`), healer tent (lift curses, `15 + 10×n`, via a shared
+  `Game.removeCurses()`), camp merchant (`genCampWares`, 5 slots, purse
+  `200 + campReturnDepth × 25`, wares identified and never cursed).
+  - Files: `js/npc.js` (`genCampWares`), `js/game.js` (`openShop` healer branch,
+    `removeCurses()`, `restAtCampfire()`, campfire step in `turn()`, camp NPC
+    stock/purse in `_swapToCamp`, `campRested` in `start()`).
+  - Curse-lifting is **camp-only** (`mode === "camp"`): cleansing at any dungeon healer
+    every 4th floor would blunt the M14 curse gamble and remove the camp's draw. The
+    uncurse *scroll* stays available in both modes — it is the dungeon's answer to a
+    curse. ✔ (verified live at a real depth-4 healer with cursed gear: no cleanse row).
+  - **Open handoff:** `genCampWares` still carries a `// M19-T3: guarantee a Scroll of
+    Return here once entities.js exposes a "scrollReturn"-style item key` marker. T3
+    made "return" a sub-kind of `scroll` rather than its own key, so that precondition
+    never arrived and the marker is unresolved — see M19-T6's findings.
 - [x] **M19-T5 — Ambience, recap & docs polish.** The camp cross-fades to a brighter
   procedural pad (`audio.startAmbient("camp")`, no new asset files) and restores the
   dungeon bed on leaving; a dusk-gradient sky letterbox replaces the void black behind
@@ -781,10 +801,25 @@ previously-unused Kenney Base Pack for outdoor art.
     the main repo root, not this worktree, so browser pixel probes weren't available)
     but has no visible effect until the camp map shrinks, the view grows, or the camera
     clamp changes — none of which were in scope here.
-- [ ] **M19-T6 — Regression tests & balance pass.** `test/camp.js`: floor-regeneration
-  determinism, camp-map reachability invariants, waystone placement invariants, and
-  merchant economy sanity; a `test/sim.js` balance check.
-  - Files: `test/camp.js` (new).
+- [x] **M19-T6 — Regression tests & balance pass.** `test/camp.js` (new): **floor
+  regeneration determinism** (the camp's core promise — `leaveCamp` doesn't save the
+  floor, it rebuilds it from `(seed, depth)`, so the rebuild must survive the RNG
+  stream being churned by a camp visit) across 2000 floors, plus camp-map invariants
+  (cave mouth reachable — else the player is stranded; NPCs reachable and in front of
+  their tent door; 2×2 tents solid and decorated; fully lit; `computeFov` can't re-fog
+  it; no bare WALL without decor = invisible wall) and the **waystone-in-camp** guard.
+  Deliberately does not duplicate `test/waystone.js` (placement) or `test/stairs.js`
+  (reachability). Economy checks (`_sellPrice < _itemPrice` for every ware, buy→sell
+  strictly loses gold, purse never negative) need a DOM-bound `Game`, so they are
+  verified in-browser rather than mirrored in Node.
+  - Files: `test/camp.js` (new). Run: `node test/camp.js [seeds]`.
+  - Balance: `sim.js` unchanged at 99.9% (the camp is opt-in; the sim never enters it).
+    **Recommendation: do not tune the camp until M16 lands.** The camp is deliberately
+    generous (free full heal per visit, waystone every 3rd floor) and M16's fuel clock
+    is its designed counterweight — the two were planned as a pair. Tuning the relief
+    valve before the pressure exists would be guessing.
+  - Done when: `node test/camp.js 500` passes; suite green. ✔ (2000 floors, 0 failures;
+    `stairs.js`/`waystone.js` clean; `sim.js` 99.9%.)
 
 ---
 

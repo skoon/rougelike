@@ -101,9 +101,84 @@ branches) and `turn()` (waystone step vs. campfire step). Expect a small manual
 merge there. T4 may land before T3, so T4 was told not to hard-depend on the
 Scroll of Return item key and to leave a marker instead.
 
-## Wave 3 — serial, after all merges
-- [ ] **M19-T6 — Regression tests & balance pass** · Opus · branch `m19-t6-tests`
-      Files: new `test/camp.js`, tuning tweaks. Then Scott's manual playthrough.
+## Wave 3 — DONE (uncommitted on master, for Scott)
+- [x] **M19-T6 — Regression tests & balance pass** — done in-session (the delegated
+      Opus agent was stopped; Scott chose to have the main session finish it, since
+      the expensive part — live browser verification — was already done here).
+      Working tree: `?? test/camp.js`, `M ROADMAP.md`, `M task.md`. **Nothing committed.**
+
+`test/camp.js` covers what nothing else did — determinism of floor regeneration
+(5000 floors), camp-map invariants, waystone-in-camp guard. It deliberately does
+not duplicate `test/waystone.js` (placement) or `test/stairs.js` (reachability).
+Economy checks need a DOM-bound `Game`, so they ran in the live browser instead of
+via a mirror or a shim.
+
+**Final suite on merged master, all green:**
+- `node test/camp.js 500` → 5000 floors, 0 failures.
+- `node test/waystone.js 500` → clean · `node test/stairs.js 500` → clean.
+- `node test/sim.js` → 99.9% (baseline ~99.7%).
+- Economy (live): every ware sells at half buy (25/12, 46/23, 39/19, 20/10); a
+  buy→sell cycle strictly loses gold (1000→987); purse never negative; camp
+  merchant 5 wares / purse 225 / all identified / none cursed.
+
+**The test is not vacuous** — mutation-checked: the tile hash discriminates by both
+seed and depth, and a real regression (rebuilding without re-seeding) is caught.
+
+### Findings for Scott (decisions, not bugs)
+1. **Return scrolls are effectively unbuyable — the T3/T4 handoff never closed.**
+   `genCampWares` still carries `// M19-T3: guarantee a Scroll of Return here once
+   entities.js exposes a "scrollReturn"-style item key`. T3 made "return" a *sub-kind*
+   of the generic `scroll` key instead, so that key never existed and the marker was
+   never actioned. Net: the camp merchant stocks a Return scroll only by chance
+   (~2/10 per slot rolls `scroll`, then 6.25% of scrolls are `return`) ≈ **~5% of
+   visits**. The plan said the merchant "sells a deeper stock list including scrolls
+   of Return". So in practice the camp is **waystone-only, every 3rd floor**. That may
+   actually be the better balance — but it is not what was designed. Decide: guarantee
+   one in camp stock, raise the scroll weight, or ratify waystone-only.
+2. **Waystone glow washes to white** (cosmetic) — `drawWaystone`'s violet `#b48cff`
+   halo uses `globalCompositeOperation = "lighter"`; over the Catacombs' tan floor all
+   channels saturate (measured 385/784 tile pixels at pure `255,255,255`). Waystones
+   only spawn at depths 3/6/9 — all light-floored themes — so this is the normal case.
+   The dark rune-stone on top still reads. Fix: lower the glow alpha, or skip `lighter`
+   on light themes.
+3. **T5's sky letterbox is dead code** — camp 30×20 > view 21×15, so the clamp never
+   exposes it. Options: shrink the camp to fit the viewport (a hub you take in at a
+   glance — the letterbox would then pay off), unclamp the camp camera, or delete it.
+4. **Balance: don't tune the camp until M16 lands.** `sim.js` is unmoved at 99.9%
+   (opt-in feature, sim never enters). The camp is deliberately generous — free full
+   heal per visit, waystone every 3rd floor — and M16's fuel clock is its designed
+   counterweight; the plan pairs them. Tuning the relief valve before the pressure
+   exists is guessing.
+
+## Wave 2 verified on merged master (2026-07-14, by the main session)
+Merged master `4590e72` smoke + live checks — all green:
+- Modules import; camp builds; waystone on depth 3, none on depth 4, **none in
+  the camp** (the `!this.depth` guard holds against the default-0 constructor arg).
+- `test/stairs.js 500` clean · `test/waystone.js 500` clean · `test/sim.js` 99.9%.
+- **Live in-browser (port 8125 to bust the JS cache):**
+  - Campfire rest: HP 5 → 40, `campRested` set; second attempt correctly blocked.
+  - Camp healer rows: `Restore 35 HP / 17g` + **`Lift curses / 25g`** (= 15+10×1). ✔
+  - **Camp-only gate proven at a REAL depth-4 dungeon healer** with cursed gear
+    worn: only the heal row, no cleanse. ✔
+  - Waystone depth 3 @ (33,31): walkable, not on stairs, stepping on it enters
+    camp with `campReturnDepth: 3`. ✔
+  - `campVisits` increments.
+
+### Open polish nits (for T6 / Scott — not bugs)
+1. **Waystone glow washes out.** `drawWaystone` draws its violet `#b48cff` halo
+   with `globalCompositeOperation = "lighter"` at ~0.35 alpha. Over the Catacombs'
+   tan floor `rgb(217,202,169)` every channel saturates → the halo renders **white**
+   (measured: 385/784 tile pixels are pure `255,255,255`). Waystones only spawn at
+   depths 3/6/9, which are all light-floored themes, so this is the normal case, not
+   an edge case. The dark rune-stone (`#2a1f3d`) is drawn over it in normal mode and
+   still reads. Cosmetic: lower the glow alpha or skip `lighter` on light themes.
+2. **T5's sky letterbox has no visible effect** — camp 30×20 > viewport 21×15, so
+   `centerCamera`'s clamp never exposes the margin. Decide: shrink the camp map,
+   unclamp the camp camera, or drop the letterbox.
+
+> **Screenshots remain unreliable** (preview tab stays `document.hidden` → rAF
+> paused). One good frame of the camp was captured earlier; everything since is
+> verified via DOM text + canvas `getImageData` probes, which is stronger anyway.
 
 ## Verification ledger
 _(agents append: what they verified, what remains for Scott)_
